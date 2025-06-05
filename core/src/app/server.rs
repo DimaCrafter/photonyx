@@ -1,9 +1,8 @@
 use std::io::Error;
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::Mutex;
 use threadpool::ThreadPool;
 
-use super::config::Config;
+use crate::app::config::CONFIG;
 use crate::http::cors::Cors;
 use crate::utils::log::*;
 use super::App;
@@ -13,22 +12,18 @@ use crate::http::{entity::*, codes::HttpCode};
 use crate::http1::{Http1Engine, Http1Connection};
 use crate::websocket::{websocket_handshake, HandshakeResult, maintain_websocket};
 
-pub fn start_server (app_mutex: &'static Mutex<App>) {
-    let app = app_mutex.lock().unwrap();
 
-    let config = Config::get();
-    let bind_address = format!("{}:{}", config.host, config.port);
+pub fn start_server (app: &'static App) {
+    let bind_address = format!("{}:{}", CONFIG.host, CONFIG.port);
 
 	match TcpListener::bind(&bind_address) {
         Ok(listener) => {
-            drop(app);
-
             let pool = ThreadPool::new(32);
 			log_success(&format!("Listening on {}", bind_address));
 
 			loop {
 				let socket = listener.accept().unwrap();
-				pool.execute(move || proceed_connection::<Http1Engine, Http1Connection>(app_mutex, socket));
+				pool.execute(move || proceed_connection::<Http1Engine, Http1Connection>(app, socket));
 			}
 		}
 		Err(error) => {
@@ -38,19 +33,19 @@ pub fn start_server (app_mutex: &'static Mutex<App>) {
 }
 
 fn proceed_connection<Http: HttpEngine<Connection> + Send, Connection: HttpConnection>
-(app_arc: &Mutex<App>, socket: (TcpStream, SocketAddr)) {
+(app: &App, socket: (TcpStream, SocketAddr)) {
     let mut connection = Http::handle_connection(socket);
 
     match connection.parse() {
         ParsingResult::Complete(req) => {
             if is_connection_upgrade(&req) {
                 if is_websocket_upgrade(&req) {
-                    proceed_websocket::<Connection>(app_arc, connection, req);
+                    proceed_websocket::<Connection>(app, connection, req);
                 } else {
                     let _ = connection.respond(Response::from_status(HttpCode::BadRequest));
                 }
             } else {
-                let _ = proceed_http::<Connection>(app_arc, connection, req);
+                let _ = proceed_http::<Connection>(app, connection, req);
             }
         }
         ParsingResult::Partial => {}
@@ -64,17 +59,23 @@ fn proceed_connection<Http: HttpEngine<Connection> + Send, Connection: HttpConne
     }
 }
 
-fn proceed_http<Connection: HttpConnection> (app_mutex: &Mutex<App>, mut connection: Connection, req: Request) -> Result<(), Error> {
+fn proceed_http<Connection: HttpConnection> (app: &App, mut connection: Connection, req: Request) -> Result<(), Error> {
     let mut res;
-    let mut app = app_mutex.lock().unwrap();
-
     let cors = Cors::new(&req);
+
     if let HttpMethod::OPTIONS = req.method {
         res = Response::from_status(HttpCode::OK);
         cors.apply_preflight(&mut res);
     } else if let Some((endpoint, params)) = app.router.match_path(&req.path) {
-        let ctx = HttpContext::from(&connection, req, params);
-        res = (endpoint.call)(ctx);
+        let mut ctx = HttpContext::from(&connection, req, params);
+        match (endpoint.call)(&mut ctx) {
+            ResponseRet::Replace(response) => {
+                res = response;
+            },
+            _ => {
+                res = ctx.res;
+            }
+        }
         cors.apply_normal(&mut res);
     } else {
         res = Response::from_code(HttpCode::NotFound, "API endpoint not found");
@@ -85,13 +86,13 @@ fn proceed_http<Connection: HttpConnection> (app_mutex: &Mutex<App>, mut connect
     return connection.disconnect();
 }
 
-fn proceed_websocket<Connection: HttpConnection> (app_mutex: &Mutex<App>, mut connection: Connection, req: Request) {
-    match websocket_handshake(app_mutex, &req) {
+fn proceed_websocket<Connection: HttpConnection> (app: &App, mut connection: Connection, req: Request) {
+    match websocket_handshake(app, &req) {
         HandshakeResult::Ok(endpoint_index, res) => {
             // todo: handle all `let _ = ...`
             let _ = connection.respond(res);
             let ctx = SocketContext::from::<Connection>(connection, req);
-            let _ = maintain_websocket(app_mutex, ctx, endpoint_index);
+            let _ = maintain_websocket(app, ctx, endpoint_index);
         }
         HandshakeResult::Err(res) => {
             let _ = connection.respond(res);

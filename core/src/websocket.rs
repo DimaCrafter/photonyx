@@ -1,9 +1,8 @@
-use std::sync::Mutex;
 use sha1::{Sha1, Digest};
 use tungstenite::{Message, Error};
 use crate::{http::{entity::{Response, HttpHeaders, ResponseType, Request}, codes::HttpCode}, app::App, context::ws::SocketContext};
 
-type EventCallerType = dyn FnMut(&mut SocketContext) + Sync + Send + 'static;
+type EventCallerType = dyn Fn(&mut SocketContext) + Sync + Send + 'static;
 
 pub enum HandshakeResult {
     /* endpoint, response */
@@ -28,9 +27,8 @@ impl HandshakeResult {
     }
 }
 
-pub fn websocket_handshake (app_mutex: &Mutex<App>, req: &Request) -> HandshakeResult {
+pub fn websocket_handshake (app: &App, req: &Request) -> HandshakeResult {
     let endpoint = {
-        let app = app_mutex.lock().unwrap();
         match app.ws_endpoints.get_pair(&req.path) {
             Some(value) => value,
             None => return HandshakeResult::err(HttpCode::NotFound, "API endpoint not found")
@@ -58,11 +56,11 @@ pub fn websocket_handshake (app_mutex: &Mutex<App>, req: &Request) -> HandshakeR
     return HandshakeResult::ok(endpoint, res_headers);
 }
 
-pub fn maintain_websocket (app_mutex: &Mutex<App>, mut ctx: SocketContext, endpoint_index: usize) -> Result<(), ()> {
+pub fn maintain_websocket (app: &App, mut ctx: SocketContext, endpoint_index: usize) -> Result<(), ()> {
     loop {
         match ctx.stream.read_message() {
             Ok(msg) => {
-                dispatch_websocket_message(app_mutex, &mut ctx, msg, endpoint_index);
+                dispatch_websocket_message(app, &mut ctx, msg, endpoint_index);
             },
             Err(err) => {
                 if let Error::ConnectionClosed = err {
@@ -79,12 +77,11 @@ pub fn maintain_websocket (app_mutex: &Mutex<App>, mut ctx: SocketContext, endpo
     return Ok(());
 }
 
-pub fn dispatch_websocket_message (app_mutex: &Mutex<App>, ctx: &mut SocketContext, msg: Message, endpoint_index: usize) {
+pub fn dispatch_websocket_message (app: &App, ctx: &mut SocketContext, msg: Message, endpoint_index: usize) {
     match msg {
         Message::Text(content) => {
-            let (event_name, payload) = split_socket_message(&content);
+            let (event_name, _payload) = split_socket_message(&content);
 
-            let mut app = app_mutex.lock().unwrap();
             let endpoint = app.ws_endpoints.at(endpoint_index).unwrap();
             let handler_opt = endpoint.handlers.get(event_name);
 
@@ -94,9 +91,6 @@ pub fn dispatch_websocket_message (app_mutex: &Mutex<App>, ctx: &mut SocketConte
                 // todo: prettify
                 return ctx.text("error", format!("Event {} not defined", event_name).as_str());
             }
-
-            // todo: eager drop
-            drop(app);
         }
         Message::Close(frame) => {
             if let Some(frame) = frame {
@@ -117,7 +111,7 @@ fn split_socket_message (payload: &str) -> (&str, &str) {
 
 pub struct WebSocketEndpoints(Vec<WebSocketEndpoint>);
 impl WebSocketEndpoints {
-    pub fn empty () -> Self { WebSocketEndpoints(Vec::new()) }
+    pub const fn empty () -> Self { WebSocketEndpoints(Vec::new()) }
 
     pub fn get (&self, path: &str) -> Option<&WebSocketEndpoint> {
         for endpoint in &self.0 {
@@ -139,11 +133,11 @@ impl WebSocketEndpoints {
         return None;
     }
 
-    pub fn at (&mut self, index: usize) -> Option<&mut WebSocketEndpoint> {
-        return self.0.get_mut(index);
+    pub fn at (&self, index: usize) -> Option<&WebSocketEndpoint> {
+        return self.0.get(index);
     }
 
-    pub fn register<Caller: FnMut(&mut SocketContext) + Sync + Send + 'static> (&mut self, path: &str, event: &str, method: Caller) {
+    pub fn register<Caller: Fn(&mut SocketContext) + Sync + Send + 'static> (&mut self, path: &str, event: &str, method: Caller) {
         let handler = SocketEventHandler { event: event.to_string(), method: Box::new(method) };
         for endpoint in &mut self.0 {
             if endpoint.path == path {
@@ -173,8 +167,8 @@ impl WebSocketEndpoint {
 pub struct WebSocketHandlers(Vec<SocketEventHandler>);
 
 impl WebSocketHandlers {
-    pub fn get (&mut self, name: &str) -> Option<&mut SocketEventHandler> {
-        for handler in &mut self.0 {
+    pub fn get (&self, name: &str) -> Option<&SocketEventHandler> {
+        for handler in &self.0 {
             if handler.event == name {
                 return Some(handler);
             }
@@ -195,7 +189,7 @@ pub struct SocketEventHandler {
 }
 
 impl SocketEventHandler {
-    pub fn call (&mut self, ctx: &mut SocketContext) {
+    pub fn call (&self, ctx: &mut SocketContext) {
         (self.method)(ctx);
     }
 }

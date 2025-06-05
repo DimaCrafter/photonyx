@@ -1,8 +1,13 @@
+use std::process;
 use json::JsonValue;
+use crate::utils::log::log_error;
 
 pub mod log;
-pub mod stream;
 pub mod macros;
+pub mod stream;
+pub mod validator;
+pub mod sync;
+
 
 pub fn camel_to_kebab (value: &String) -> String {
     let mut is_last_upper = false;
@@ -36,8 +41,10 @@ pub fn json_access<'a> (obj: &'a mut JsonValue, path: &'a str) -> &'a mut JsonVa
 	return result;
 }
 
-pub fn json_read_array<'a, V: 'a, G, E>(obj: &'a JsonValue, getter: G, empty: E) -> Option<Vec<V>>
+
+pub fn json_read_array<'a, V, G, E>(obj: &'a JsonValue, getter: G, empty: E) -> Option<Vec<V>>
 where
+    V: 'a,
     G: Fn(&'a JsonValue) -> Option<V>,
     E: Fn() -> V,
 {
@@ -55,4 +62,11 @@ where
         }),
         _ => None,
     }
+}
+
+pub fn bake_fatal<'a, R: 'a> (msg: &'a str) -> impl (Fn() -> R) + 'a {
+    return move || {
+        log_error(msg);
+        process::exit(-1);
+    };
 }

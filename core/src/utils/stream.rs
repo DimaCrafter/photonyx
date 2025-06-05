@@ -26,10 +26,10 @@ impl StreamUtils for BufStream<TcpStream> {
     #[inline]
     fn read_string_before (&mut self, needle: char) -> Option<String> {
         let mut buffer = Vec::new();
-        return if let Some(_) = self.read_before(needle as u8, &mut buffer) {
-            unsafe { Some(String::from_utf8_unchecked(buffer)) }
+        if let Some(_) = self.read_before(needle as u8, &mut buffer) {
+            return Some(String::from_utf8_lossy(&buffer).into_owned());
         } else {
-            None
+            return None;
         }
     }
 }

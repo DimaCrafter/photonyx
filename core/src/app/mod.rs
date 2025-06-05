@@ -4,6 +4,8 @@ use self::router::Router;
 pub mod config;
 pub mod server;
 pub mod router;
+pub mod router_c;
+
 
 pub struct App {
 	pub ws_endpoints: WebSocketEndpoints,

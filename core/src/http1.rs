@@ -2,7 +2,6 @@ use std::io::{Error, Read, Write};
 use std::net::{SocketAddr, IpAddr, TcpStream, Shutdown};
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
-use std::str::FromStr;
 use bufstream::BufStream;
 use dc_macro::assert_stream;
 use crate::http::codes::HttpCode;
@@ -30,6 +29,22 @@ impl Http1Connection {
             stream: BufStream::new(socket.0),
             address: socket.1.ip(),
             version_minor: '\0'
+        }
+    }
+
+    fn read_body (&mut self, body: &mut Vec<u8>) {
+        let mut chunk = [0; 1024];
+
+        loop {
+            let n = self.stream.read(&mut chunk).unwrap();
+            if n == 0 {
+                break;
+            }
+
+            body.extend_from_slice(&chunk[..n]);
+            if n < chunk.len() {
+                break;
+            }
         }
     }
 }
@@ -72,24 +87,22 @@ impl HttpConnection for Http1Connection {
             let header_value = self.stream.read_string_before('\r');
             if header_value.is_none() { return ParsingResult::Error(HttpCode::RequestHeaderFieldsTooLarge) }
 
-            let header_name = unsafe { String::from_utf8_unchecked(header_name) };
+            let header_name = String::from_utf8_lossy(&header_name).into_owned();
             req.headers.set_normal(header_name, header_value.unwrap());
         }
 
-        if matches!(req.method, HttpMethod::POST) {
-            let length_header = req.headers.get("Content-Length");
-            if length_header.is_none() { return ParsingResult::Error(HttpCode::BadRequest) }
+        if let HttpMethod::POST = req.method {
+            match req.parse_content_length() {
+                Some(len) => {
+                    req.body = Vec::with_capacity(len);
+                    unsafe { req.body.set_len(len); }
 
-            let size = usize::from_str(length_header.unwrap().as_str());
-            if size.is_err() { return ParsingResult::Error(HttpCode::BadRequest) }
-
-            let size = size.unwrap();
-            let mut body_raw = Vec::<u8>::with_capacity(size);
-            unsafe { body_raw.set_len(size); }
-
-            let body_raw = body_raw.as_mut_slice();
-            self.stream.read_exact(body_raw).unwrap();
-            println!("Content:\n{:?}", body_raw);
+                    self.stream.read_exact(req.body.as_mut_slice()).unwrap();
+                }
+                None => {
+                    self.read_body(&mut req.body);
+                }
+            }
         }
 
         return ParsingResult::Complete(req);

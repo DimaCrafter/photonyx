@@ -1,21 +1,28 @@
 use std::{collections::HashMap, net::IpAddr};
-use crate::http::{entity::{HttpHeaders, Request, Response, ResponseType, HttpConnection}, codes::HttpCode};
+use json::{object, JsonValue};
+use crate::http::{codes::HttpCode, entity::{HttpConnection, HttpHeaders, Request, Response, ResponseRet, ResponseType}};
+use crate::utils::validator::*;
+
 
 #[derive(Debug)]
 pub struct HttpContext {
 	pub req: Request,
+	pub res: Response,
 	pub params: HashMap<String, String>,
-	pub address: IpAddr,
-	pub res_headers: HttpHeaders
+	pub address: IpAddr
 }
 
 impl HttpContext {
 	pub fn from<Connection: HttpConnection> (connection: &Connection, req: Request, params: HashMap<String, String>) -> Self {
 		HttpContext {
 			req,
+			res: Response {
+				code: HttpCode::NotSent,
+				headers: HttpHeaders::empty(),
+				payload: ResponseType::NoContent
+			},
 			params,
-			address: connection.get_address(),
-			res_headers: HttpHeaders::empty()
+			address: connection.get_address()
 		}
 	}
 
@@ -31,36 +38,65 @@ impl HttpContext {
 
 	#[inline]
 	pub fn set_header (&mut self, name: &str, value: String) {
-		self.res_headers.set(name.to_string(), value);
+		self.res.headers.set(name.to_string(), value);
 	}
 
-	pub fn text (self, message: &str) -> Response {
-		Response {
-			code: HttpCode::OK,
-			headers: self.res_headers.with_type("text/plain"),
-			payload: ResponseType::Payload(message.into())
+	pub fn validate_json<T: Validate + ValidateJson + Default> (&mut self) -> ResponseRet<T> {
+		let body_str = match str::from_utf8(self.req.body.as_slice()) {
+			Ok(value) => value,
+			Err(error) => return self.json_status(
+				object! { "type": "ValidationError", "message": error.to_string() },
+				HttpCode::BadRequest
+			)
+		};
+
+		match validate_json::<T>(body_str) {
+			Ok(payload) => ResponseRet::Result(payload),
+			Err(error) => self.json_status(
+				object! { "type": "ValidationError", "message": error.message, "path": error.path },
+				HttpCode::BadRequest
+			)
 		}
 	}
 
-	pub fn text_status (self, message: &str, code: HttpCode) -> Response {
-		Response {
-			code,
-			headers: self.res_headers.with_type("text/plain"),
-			payload: ResponseType::Payload(message.into())
-		}
+	#[inline]
+	pub fn json (&mut self, data: JsonValue) -> ResponseRet {
+		return self.json_status(data, HttpCode::OK);
 	}
 
-	pub fn redirect (mut self, target: &str) -> Response {
-		self.res_headers.set("location".to_string(), target.to_string());
+	#[inline]
+	pub fn json_status<T> (&mut self, data: JsonValue, code: HttpCode) -> ResponseRet<T> {
+		self.res.code = code;
+		self.res.headers.set_default("content-type".to_owned(), "application/json".to_owned());
+		self.res.payload = ResponseType::Payload(data.dump().into());
 
-		Response {
-			code: HttpCode::TemporaryRedirect,
-			headers: self.res_headers,
-			payload: ResponseType::NoContent
-		}
+		return ResponseRet::Return;
 	}
 
-	pub fn drop (self) -> Response {
-		Response::drop()
+	#[inline]
+	pub fn text (&mut self, message: &str) -> ResponseRet {
+		return self.text_status(message, HttpCode::OK);
+	}
+
+	#[inline]
+	pub fn text_status (&mut self, message: &str, code: HttpCode) -> ResponseRet {
+		self.res.code = code;
+		self.res.headers.set_default("content-type".to_owned(), "text/plain".to_owned());
+		self.res.payload = ResponseType::Payload(message.into());
+
+		return ResponseRet::Return;
+	}
+
+	pub fn redirect (&mut self, target: &str) -> ResponseRet {
+		self.res.code = HttpCode::TemporaryRedirect;
+		self.res.headers.set("location".to_string(), target.to_string());
+		self.res.payload = ResponseType::NoContent;
+
+		return ResponseRet::Return;
+	}
+
+	#[inline]
+	pub fn drop (self) -> ResponseRet {
+		return ResponseRet::Replace(Response::drop());
 	}
 }

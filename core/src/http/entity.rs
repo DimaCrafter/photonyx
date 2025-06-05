@@ -1,6 +1,8 @@
 use core::slice;
 use std::io::Error;
 use std::net::{SocketAddr, IpAddr, TcpStream};
+use std::ops::{ControlFlow, FromResidual, Try};
+use std::str::FromStr;
 use bufstream::BufStream;
 use crate::http::codes::HttpCode;
 
@@ -34,7 +36,7 @@ pub struct HttpHeaders {
 }
 
 impl HttpHeaders {
-    pub fn empty () -> Self {
+    pub const fn empty () -> Self {
         HttpHeaders {
             contents: Vec::new()
         }
@@ -116,13 +118,59 @@ pub enum ParsingResult {
     Invalid
 }
 
+#[derive(Debug)]
 pub struct Response {
     pub code: HttpCode,
     pub headers: HttpHeaders,
     pub payload: ResponseType
 }
 
+pub enum ResponseRet<T = ()> {
+    /// Like `Ok(T)`, used to return result
+    Result(T),
+    /// Like `Err(_)`, used to exit handler
+    Return,
+    /// Like `Err(Response)`, used to set or replace current response and exit handler
+    Replace(Response)
+}
+
+impl<T> Try for ResponseRet<T> where ResponseRet<T>: FromResidual<ResponseRet<T>> {
+    type Output = T;
+    type Residual = ResponseRet<T>;
+    fn branch (self) -> ControlFlow<Self::Residual, Self::Output> {
+        return match self {
+            ResponseRet::Result(value) => ControlFlow::Continue(value),
+            ResponseRet::Return => ControlFlow::Break(self),
+            ResponseRet::Replace(_) => ControlFlow::Break(self),
+        }
+    }
+
+    fn from_output (value: Self::Output) -> Self {
+        return ResponseRet::Result(value);
+    }
+}
+
+// Any residuals can be safely re-casted, because `Result` will never stored it a residual
+impl<A, B> FromResidual<ResponseRet<B>> for ResponseRet<A> {
+    fn from_residual (value: ResponseRet<B>) -> Self {
+        return match value {
+            ResponseRet::Result(_) => unreachable!(),
+            ResponseRet::Return => ResponseRet::Return,
+            ResponseRet::Replace(res) => ResponseRet::Replace(res),
+        }
+    }
+}
+
+
 impl Response {
+    pub const fn empty () -> Self {
+        Response {
+            code: HttpCode::NotSent,
+            headers: HttpHeaders::empty(),
+            payload: ResponseType::NoContent
+        }
+    }
+
     pub fn from_code (code: HttpCode, message: &str) -> Self {
         Response {
             code,
@@ -154,6 +202,7 @@ pub struct Request {
     pub query: String,
     pub headers: HttpHeaders,
     pub method: HttpMethod,
+    pub body: Vec<u8>
 }
 
 impl Request {
@@ -167,11 +216,17 @@ impl Request {
             path,
             query,
             method,
-            headers: HttpHeaders::empty()
+            headers: HttpHeaders::empty(),
+            body: Vec::new()
         }
+    }
+
+    pub fn parse_content_length (&self) -> Option<usize> {
+        return self.headers.get("Content-Length").and_then(|len| usize::from_str(len.as_str()).ok());
     }
 }
 
+#[derive(Debug)]
 pub enum ResponseType {
     NoContent,
     Payload(Vec<u8>),

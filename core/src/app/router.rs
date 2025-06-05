@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use crate::{context::http::HttpContext, http::entity::Response};
+use crate::{context::http::HttpContext, http::entity::ResponseRet};
 
-type ActionCallerType = dyn FnMut(HttpContext) -> Response + Sync + Send + 'static;
+type ActionCallerType = dyn Fn(&mut HttpContext) -> ResponseRet + Sync + Send + 'static;
 
 pub struct Route {
     pub matcher: PathMatcher,
@@ -22,17 +22,17 @@ pub struct Router {
 }
 
 impl Router {
-    pub fn empty () -> Self {
+    pub const fn empty () -> Self {
         Router { routes: Vec::new() }
     }
 
     #[inline]
-    pub fn register<Caller: FnMut(HttpContext) -> Response + Sync + Send + 'static> (&mut self, pattern: String, action: Caller) {
+    pub fn register<Caller: Fn(&mut HttpContext) -> ResponseRet + Sync + Send + 'static> (&mut self, pattern: String, action: Caller) {
         self.routes.push(Route::new(pattern, Box::new(action)));
     }
 
-    pub fn match_path<'a> (&'a mut self, path: &String) -> Option<(&'a mut Route, HashMap<String, String>)> {
-        for route in &mut self.routes {
+    pub fn match_path (&self, path: &String) -> Option<(&Route, HashMap<String, String>)> {
+        for route in &self.routes {
             if let Some(params) = route.matcher.exec(&path) {
                 return Some((route, params));
             }

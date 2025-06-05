@@ -1,36 +1,19 @@
 use std::env;
 
+use crate::utils::sync::{AppStatic, LazyInit};
+
 const RESET: &'static str = "\x1B[0m";
 const BOLD: &'static str = "\x1B[1m";
-static mut THEME: Option<ShellTheme> = None;
+static THEME: AppStatic<ShellTheme> = AppStatic::new();
+
 struct ShellTheme {
-	get: fn (ShellColor, u8) -> String
+	calc_color: fn (ShellColor, u8) -> String
 }
 
-enum ShellColor { Info, Ok, Warning, Error }
-
-// todo: simplify & add caching (?)
 impl ShellTheme {
-	fn init () -> &'static Self {
-		let theme;
-		if let Some(palette) = env::var_os("COLORTERM") {
-			if palette == "truecolor" || palette == "x24" {
-				theme = Self::rgb();
-			} else if palette == "256color" {
-				theme = Self::named();
-			} else {
-				theme = Self::ansi();
-			}
-		} else {
-			theme = Self::ansi();
-		}
-
-		return unsafe { THEME.insert(theme) };
-	}
-
 	fn rgb () -> Self {
 		ShellTheme {
-			get: |color, offset| {
+			calc_color: |color, offset| {
 				let code = match color {
 					ShellColor::Info => "0;192;25",
 					ShellColor::Ok => "0;192;64",
@@ -45,7 +28,7 @@ impl ShellTheme {
 
 	fn named () -> Self {
 		ShellTheme {
-			get: |color, offset| {
+			calc_color: |color, offset| {
 				let code = match color {
 					ShellColor::Info => "39",
 					ShellColor::Ok => "35",
@@ -60,7 +43,7 @@ impl ShellTheme {
 
 	fn ansi () -> Self {
 		ShellTheme {
-			get: |color, offset| {
+			calc_color: |color, offset| {
 				let code = match color {
 					ShellColor::Info => 6,
 					ShellColor::Ok => 2,
@@ -72,42 +55,62 @@ impl ShellTheme {
 			}
 		}
 	}
+}
 
-	pub fn current () -> &'static Self {
-		if let Some(theme) = unsafe { THEME.as_ref() } {
-			return theme;
+impl LazyInit for ShellTheme {
+	fn init () -> Self {
+		if let Some(palette) = env::var_os("COLORTERM") {
+			if palette == "truecolor" || palette == "x24" || palette == "24bit" {
+				return Self::rgb();
+			} else if palette == "256color" || palette == "ansi256" {
+				return Self::named();
+			} else {
+				return Self::ansi();
+			}
 		} else {
-			return Self::init();
+			return Self::ansi();
 		}
 	}
+}
 
-	pub fn get (color: ShellColor, is_bg: bool) -> String {
-		let theme = Self::current();
-		return (theme.get)(color, if is_bg { 40 } else { 30 });
+
+enum ShellColor { Info, Ok, Warning, Error }
+
+impl ShellColor {
+	/// Get foreground color sequence
+	#[inline]
+	pub fn as_fg (self) -> String {
+		return (THEME.calc_color)(self, 30);
+	}
+
+	/// Get background color sequence
+	#[inline]
+	pub fn as_bg (self) -> String {
+		return (THEME.calc_color)(self, 40);
 	}
 }
 
 pub fn log_info (msg: &str) {
-	println!("{}{} INFO {} {}", ShellTheme::get(ShellColor::Info, true), BOLD, RESET, msg);
+	println!("{}{} INFO {} {}", ShellColor::Info.as_bg(), BOLD, RESET, msg);
 }
 
 pub fn log_success (msg: &str) {
-	println!("{}{} OK {} {}", ShellTheme::get(ShellColor::Ok, true), BOLD, RESET, msg);
+	println!("{}{} OK {} {}", ShellColor::Ok.as_bg(), BOLD, RESET, msg);
 }
 
 pub fn log_warning (msg: &str) {
-	println!("{}{} WARN {} {}", ShellTheme::get(ShellColor::Warning, true), BOLD, RESET, msg);
+	println!("{}{} WARN {} {}", ShellColor::Warning.as_bg(), BOLD, RESET, msg);
 }
 
 pub fn log_error (msg: &str) {
-	println!("{}{} ERR {} {}", ShellTheme::get(ShellColor::Error, true), BOLD, RESET, msg);
+	println!("{}{} ERR {} {}", ShellColor::Error.as_bg(), BOLD, RESET, msg);
 }
 
 pub fn log_error_lines (msg: &str, lines: String) {
 	log_error(msg);
 	for line in lines.split('\n') {
-		println!(" {}│{} {}", ShellTheme::get(ShellColor::Error, false), RESET, line);
+		println!(" {}│{} {}", ShellColor::Error.as_fg(), RESET, line);
 	}
 
-	println!(" {}└─{}", ShellTheme::get(ShellColor::Error, false), RESET);
+	println!(" {}└─{}", ShellColor::Error.as_fg(), RESET);
 }
