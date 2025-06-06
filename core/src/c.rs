@@ -1,4 +1,4 @@
-use std::{alloc::{self, Layout}, ffi::c_char, ptr::slice_from_raw_parts};
+use std::{alloc::{self, Layout}, ffi::{c_char, CString}, ptr::slice_from_raw_parts};
 
 #[no_mangle]
 pub unsafe extern "C" fn ra_alloc (size: usize, align: usize) -> *mut u8 {
@@ -15,11 +15,18 @@ pub unsafe extern "C" fn ra_dealloc (ptr: *mut u8, size: usize, align: usize) {
     return alloc::dealloc(ptr, Layout::from_size_align_unchecked(size, align));
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn str_drop (ptr: c_str_mut) {
+    return c_deinit_str(ptr);
+}
+
 #[allow(non_camel_case_types)]
 pub type c_str = *const c_char;
+#[allow(non_camel_case_types)]
+pub type c_str_mut = *mut c_char;
 
 #[inline(always)]
-pub fn c_init<T> (ctor: fn () -> T) -> *mut T {
+pub fn c_init<T, C: Fn () -> T> (ctor: C) -> *mut T {
 	return Box::into_raw(Box::new((ctor)()));
 }
 
@@ -31,6 +38,16 @@ pub unsafe fn c_unwrap<T> (ptr: *mut T) -> T {
 #[inline(always)]
 pub unsafe fn c_deinit<T> (ptr: *mut T) {
 	let _ = c_unwrap(ptr);
+}
+
+#[inline(always)]
+pub fn c_init_str<T: Into<Vec<u8>>> (value: T) -> c_str {
+	return CString::new(value).unwrap().into_raw();
+}
+
+#[inline(always)]
+pub unsafe fn c_deinit_str (ptr: c_str_mut) {
+    let _ = CString::from_raw(ptr);
 }
 
 pub fn c_strlen (raw: c_str) -> usize {

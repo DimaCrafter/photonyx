@@ -30,6 +30,9 @@ available only as a compiled library, and the only way to get it's code - decomp
 C API naming convention:
 
 - `get_{name}` - get global instance (`&'static`),
+- `{enum name}_new` - instantiate structure,
+- `{struct name}_new_{variant}` - instantiate enum variant,
+- `{entity name}_drop` - deallocate entity,
 - `{struct name}_get_{field}` - get field value,
 - `{struct name}_set_{field}` - set field value,
 - `{struct name}_{field}` - get field pointer,

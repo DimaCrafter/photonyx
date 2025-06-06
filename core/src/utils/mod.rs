@@ -2,6 +2,7 @@ use std::process;
 use json::JsonValue;
 use crate::utils::log::log_error;
 
+pub mod json_c;
 pub mod log;
 pub mod macros;
 pub mod stream;
