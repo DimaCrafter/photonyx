@@ -15,7 +15,7 @@ impl ShellTheme {
 		ShellTheme {
 			calc_color: |color, offset| {
 				let code = match color {
-					ShellColor::Info => "0;192;25",
+					ShellColor::Info => "80;174;248",
 					ShellColor::Ok => "0;192;64",
 					ShellColor::Warning => "255;112;0",
 					ShellColor::Error => "224;0;0"

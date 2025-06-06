@@ -1,5 +1,5 @@
 [package]
-name = "dc-api-core"
+name = "photonyx"
 version = "0.1.0"
 edition = "2021"
 
@@ -13,4 +13,6 @@ base64 = "0.13.0"
 sha1 = "0.10.1"
 json = "0.12.4"
 tungstenite = "0.17.3"
-dc-macro = { path = "../macro" }
+libloading = "0.8.8"
+photonyx_macro = { path = "../macro" }
+ouroboros = "0.18.5"

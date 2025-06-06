@@ -1,34 +1,51 @@
 use std::collections::HashMap;
-use crate::{context::http::HttpContext, http::entity::ResponseRet};
+use crate::{context::http::HttpContext, http::entity::ResponseRet, utils::log::log_info};
 
 type ActionCallerType = dyn Fn(&mut HttpContext) -> ResponseRet + Sync + Send + 'static;
 
 pub struct Route {
     pub matcher: PathMatcher,
-    pub call: Box<ActionCallerType>
+    pub call: Box<ActionCallerType>,
+    // Module name can be used for unloading later
+    pub origin_module: Option<String>
 }
 
 impl Route {
     pub fn new (pattern: String, action: Box<ActionCallerType>) -> Self {
         return Route {
             matcher: PathMatcher::from_pattern(pattern),
-            call: action
-        }
+            call: action,
+            origin_module: None
+        };
     }
 }
 
 pub struct Router {
-    pub routes: Vec<Route>
+    pub routes: Vec<Route>,
+    origin_module: Option<String>
 }
 
 impl Router {
     pub const fn empty () -> Self {
-        Router { routes: Vec::new() }
+        Router {
+            routes: Vec::new(),
+            origin_module: None
+        }
     }
 
     #[inline]
     pub fn register<Caller: Fn(&mut HttpContext) -> ResponseRet + Sync + Send + 'static> (&mut self, pattern: String, action: Caller) {
-        self.routes.push(Route::new(pattern, Box::new(action)));
+        let reg_msg = format!("registered route '{pattern}' to {:p}", &action);
+
+        let mut route = Route::new(pattern, Box::new(action));
+        if let Some(ref mod_name) = self.origin_module {
+            route.origin_module = Some(mod_name.clone());
+            log_info(&format!("{mod_name}: {reg_msg}"));
+        } else {
+            log_info(&format!("core: {reg_msg}"));
+        }
+
+        self.routes.push(route);
     }
 
     pub fn match_path (&self, path: &String) -> Option<(&Route, HashMap<String, String>)> {
@@ -39,6 +56,12 @@ impl Router {
         }
 
         return None;
+    }
+
+    pub fn with_module<C: Fn (&mut Router)> (&mut self, name: &str, consume: C) {
+        self.origin_module = Some(name.to_owned());
+        consume(self);
+        self.origin_module = None;
     }
 }
 

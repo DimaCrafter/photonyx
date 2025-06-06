@@ -1,17 +1,17 @@
 use std::{alloc::{self, Layout}, ffi::c_char, ptr::slice_from_raw_parts};
 
 #[no_mangle]
-pub unsafe extern "C" fn r_alloc (size: usize, align: usize) -> *mut u8 {
+pub unsafe extern "C" fn ra_alloc (size: usize, align: usize) -> *mut u8 {
     return alloc::alloc(Layout::from_size_align_unchecked(size, align));
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn r_realloc (ptr: *mut u8, old_size: usize, new_size: usize, align: usize) -> *mut u8 {
+pub unsafe extern "C" fn ra_realloc (ptr: *mut u8, old_size: usize, new_size: usize, align: usize) -> *mut u8 {
     return alloc::realloc(ptr, Layout::from_size_align_unchecked(old_size, align), new_size);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn r_dealloc (ptr: *mut u8, size: usize, align: usize) {
+pub unsafe extern "C" fn ra_dealloc (ptr: *mut u8, size: usize, align: usize) {
     return alloc::dealloc(ptr, Layout::from_size_align_unchecked(size, align));
 }
 

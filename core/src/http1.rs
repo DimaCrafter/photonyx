@@ -3,7 +3,7 @@ use std::net::{SocketAddr, IpAddr, TcpStream, Shutdown};
 use byteorder::ReadBytesExt;
 use byteorder::WriteBytesExt;
 use bufstream::BufStream;
-use dc_macro::assert_stream;
+use photonyx_macro::assert_stream;
 use crate::http::codes::HttpCode;
 use crate::http::entity::{HttpConnection, HttpEngine, HttpMethod, ParsingResult, Request, Response, ResponseType};
 use crate::utils::stream::StreamUtils;
