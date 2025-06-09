@@ -6,8 +6,9 @@ pub mod json_c;
 pub mod log;
 pub mod macros;
 pub mod stream;
-pub mod validator;
 pub mod sync;
+pub mod validator;
+pub mod validator_c;
 
 
 pub fn camel_to_kebab (value: &String) -> String {

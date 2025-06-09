@@ -1,3 +1,5 @@
+use json::{object, JsonValue};
+
 #[macro_export]
 macro_rules! validator_struct {
 	{ $name:ident, $( $field:ident : $type:ty ),* } => {
@@ -126,6 +128,12 @@ macro_rules! validator_json {
 pub struct ValidationError {
 	pub message: String,
 	pub path: Vec<String>
+}
+
+impl ValidationError {
+	pub fn into_json (self) -> JsonValue {
+		return object! { "type": "ValidationError", "message": self.message, "path": self.path };
+	}
 }
 
 pub trait ValidateJson {
