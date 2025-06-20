@@ -15,4 +15,5 @@ json = "0.12.4"
 tungstenite = "0.17.3"
 libloading = "0.8.8"
 photonyx_macro = { path = "../macro" }
+bindings = { path = "../bindings" }
 ouroboros = "0.18.5"

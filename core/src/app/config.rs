@@ -55,6 +55,19 @@ impl Config {
         self.cors.load(&self.obj);
     }
 
+    pub fn get_path (&self, path: Vec<&str>) -> &JsonValue {
+        let mut anchor = &self.obj;
+        for part in path {
+            if anchor.is_null() {
+                break;
+            }
+
+            anchor = &anchor[part];
+        }
+
+        return anchor;
+    }
+
     #[inline]
     pub fn get_env (key: &str) -> Option<String> {
         return env::var(key).ok();

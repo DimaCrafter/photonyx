@@ -1,5 +1,6 @@
 use std::{alloc::{self, Layout}, ffi::{c_char, CString}, ptr::slice_from_raw_parts};
 
+
 #[no_mangle]
 pub unsafe extern "C" fn rs_alloc (size: usize, align: usize) -> *mut u8 {
     return alloc::alloc(Layout::from_size_align_unchecked(size, align));
@@ -26,7 +27,7 @@ pub type c_str = *const c_char;
 pub type c_str_mut = *mut c_char;
 
 #[inline(always)]
-pub fn c_init<T, C: Fn () -> T> (ctor: C) -> *mut T {
+pub fn c_init<T, C: FnOnce () -> T> (ctor: C) -> *mut T {
 	return Box::into_raw(Box::new((ctor)()));
 }
 
@@ -70,19 +71,4 @@ pub fn c_strlen (raw: c_str) -> usize {
 pub unsafe fn c_string (ptr: c_str) -> String {
 	let raw = &*slice_from_raw_parts(ptr as *const u8, c_strlen(ptr));
 	return String::from_utf8_lossy(raw).into_owned();
-}
-
-#[repr(C)]
-pub struct Slice<T> {
-	ptr: *const T,
-	len: usize
-}
-
-impl<T> Slice<T> {
-    pub fn for_vec(value: &Vec<T>) -> Slice<T> {
-        Slice {
-            ptr: value.as_ptr(),
-            len: value.len()
-        }
-    }
 }

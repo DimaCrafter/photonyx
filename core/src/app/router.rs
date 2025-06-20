@@ -58,7 +58,7 @@ impl Router {
         return None;
     }
 
-    pub fn with_module<C: Fn (&mut Router)> (&mut self, name: &str, consume: C) {
+    pub fn with_module<C: Fn (&mut Self)> (&mut self, name: &str, consume: C) {
         self.origin_module = Some(name.to_owned());
         consume(self);
         self.origin_module = None;

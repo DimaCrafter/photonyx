@@ -2,6 +2,7 @@ use crate::{app::modules::Module, websocket::WebSocketEndpoints};
 use self::router::Router;
 
 pub mod config;
+pub mod config_c;
 pub mod modules;
 pub mod server;
 pub mod router;

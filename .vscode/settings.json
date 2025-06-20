@@ -1,5 +1,6 @@
 {
 	"rust-analyzer.linkedProjects": [
+		"./bindings/Cargo.toml",
 		"./core/Cargo.toml",
 		"./macro/Cargo.toml",
 		"./test/Cargo.toml"

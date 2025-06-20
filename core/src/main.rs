@@ -1,16 +1,15 @@
 #![feature(try_trait_v2)]
 
 use std::process;
-
 use app::App;
-
-use crate::{app::modules::load_modules, utils::log::{log_error, log_info}};
+use crate::{app::{config::CONFIG, modules::load_modules}, db::connection::{init_database_connections_store, DatabaseConnections}, utils::log::{log_error, log_info}};
 
 pub mod app;
 pub mod http;
 pub mod http1;
 pub mod websocket;
 pub mod context;
+pub mod db;
 pub mod utils;
 pub(crate) mod c;
 
@@ -26,13 +25,30 @@ pub fn main () {
 
     log_info(&format!("Loaded modules: {}", app.modules.len()));
 
+    // stage 1 - loading database providers
+    let mut db_connections = DatabaseConnections::new();
+
     for module in &app.modules {
-        module.with_on_attach(|on_attach| {
-            if let Some(call) = on_attach {
-                log_info(&format!("{}: calling on_attach", module.get_name()));
-                app.router.with_module(module.get_name(), |router| call(router));
+        if let Some(database) = module.provide_database() {
+            let cfg = &CONFIG["db"]["primary"];
+            match database.connect(cfg) {
+                Err(error) => {
+                    println!("failed to create connection: {}", error);
+                }
+                Ok(conn) => {
+                    // todo! un-hardcode     VVVVVVV
+                    db_connections.register("primary".to_owned(), conn);
+                }
             }
-        });
+        }
+    }
+
+    init_database_connections_store(db_connections);
+
+    // stage 2 - loading controllers
+    for module in &app.modules {
+        module.provide_models();
+        module.provide_routes(&mut app.router);
     }
 
     app::server::start_server(app);

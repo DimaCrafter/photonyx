@@ -1,7 +1,6 @@
 use proc_macro::TokenStream;
 
 extern crate proc_macro;
-mod utils;
 
 #[proc_macro]
 pub fn assert_stream (input: TokenStream) -> TokenStream {

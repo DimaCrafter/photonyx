@@ -1,4 +1,5 @@
-use crate::{c::{c_unwrap, Slice}, context::http::HttpContext, http::entity::Response};
+use bindings::c::Slice;
+use crate::{c::c_unwrap, context::http::HttpContext, http::entity::Response};
 
 
 #[no_mangle]
