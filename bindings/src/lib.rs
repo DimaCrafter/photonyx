@@ -1,5 +1,7 @@
 pub mod c;
 pub mod db;
+pub mod session;
+pub mod rs;
 pub mod validator;
 
 

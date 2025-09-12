@@ -66,7 +66,7 @@ fn proceed_http<Connection: HttpConnection> (app: &App, mut connection: Connecti
     if let HttpMethod::OPTIONS = req.method {
         res = Response::from_status(HttpCode::OK);
         cors.apply_preflight(&mut res);
-    } else if let Some((endpoint, params)) = app.router.match_path(&req.path) {
+    } else if let Some((endpoint, params)) = app.router.match_action(&req.path) {
         let mut ctx = HttpContext::from(&connection, req, params);
         match (endpoint.call)(&mut ctx) {
             ResponseRet::Replace(response) => {

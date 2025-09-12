@@ -1,4 +1,4 @@
-use std::process;
+use std::{process, time::{Duration, SystemTime, UNIX_EPOCH}};
 use json::JsonValue;
 use crate::utils::log::log_error;
 
@@ -48,4 +48,24 @@ pub fn bake_fatal<'a, R: 'a> (msg: &'a str) -> impl (Fn() -> R) + 'a {
         log_error(msg);
         process::exit(-1);
     };
+}
+
+pub fn parse_duration (input: &str) -> Option<Duration> {
+    if input.ends_with("s") {
+        return Some(Duration::from_secs(input[..input.len() - 1].parse().ok()?));
+    } else if input.ends_with("m") {
+        return Some(Duration::from_mins(input[..input.len() - 1].parse().ok()?));
+    } else if input.ends_with("h") {
+        return Some(Duration::from_hours(input[..input.len() - 1].parse().ok()?));
+    } else if input.ends_with("d") {
+        return Some(Duration::from_days(input[..input.len() - 1].parse().ok()?));
+    } else if input.ends_with("w") {
+        return Some(Duration::from_weeks(input[..input.len() - 1].parse().ok()?));
+    } else {
+        return None;
+    }
+}
+
+pub fn system_as_unix_num (timestamp: &SystemTime) -> f64 {
+    return timestamp.duration_since(UNIX_EPOCH).unwrap().as_millis() as f64;
 }

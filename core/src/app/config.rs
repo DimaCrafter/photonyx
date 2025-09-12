@@ -1,6 +1,6 @@
-use crate::utils::{bake_fatal, json_read_array, log::log_error_lines, sync::{AppStatic, LazyInit}};
+use crate::utils::{bake_fatal, json_read_array, log::{log_error, log_error_lines}, parse_duration, sync::{AppStatic, LazyInit}};
 use json::{object, JsonValue};
-use std::{env, fs, ops::{Index, IndexMut}, path::Path, process, str::FromStr};
+use std::{env, fs, ops::{Index, IndexMut}, path::Path, process, str::FromStr, time::Duration};
 
 
 pub static CONFIG: AppStatic<Config> = AppStatic::new();
@@ -10,7 +10,8 @@ pub struct Config {
 
     pub host: String,
     pub port: u16,
-    pub cors: CorsConfig
+    pub cors: CorsConfig,
+    pub session: Option<SessionConfig>
 }
 
 impl Config {
@@ -19,7 +20,8 @@ impl Config {
             obj: object! {},
             host: "127.0.0.1".to_owned(),
             port: 8081,
-            cors: CorsConfig::default()
+            cors: CorsConfig::default(),
+            session: None
         }
     }
 
@@ -53,6 +55,12 @@ impl Config {
         }
 
         self.cors.load(&self.obj);
+
+        if self.obj["session"].is_object() {
+            let mut session = SessionConfig::default();
+            session.load(&self.obj);
+            self.session = Some(session);
+        }
     }
 
     pub fn get_path (&self, path: Vec<&str>) -> &JsonValue {
@@ -159,4 +167,51 @@ impl CorsConfig {
             self.ttl = "86400".to_owned();
         }
 	}
+}
+
+pub struct SessionConfig {
+    pub ttl: Duration,
+    pub secret: String,
+    pub store: String,
+    pub store_arg: String
+}
+
+impl SessionConfig {
+    pub const fn default () -> Self {
+        SessionConfig {
+            ttl: Duration::ZERO,
+            secret: String::new(),
+            store: String::new(),
+            store_arg: String::new()
+        }
+    }
+
+	fn load (&mut self, config: &JsonValue) {
+        let ttl_json = &config["session"]["ttl"];
+        if let Some(ttl_str) = ttl_json.as_str() {
+            if let Some(ttl) = parse_duration(ttl_str) {
+                self.ttl = ttl;
+            }
+        }
+
+        if let Some(secret) = config["session"]["secret"].as_str() {
+            self.secret = secret.to_owned();
+        } else {
+            log_error("Config parsing error: `session.secret` is required when `session` present");
+            process::exit(-1);
+        }
+
+        if let Some(store) = config["session"]["store"].as_str() {
+            let (name, arg) = match store.split_once(':') {
+                Some(pair) => pair,
+                None => (store, "")
+            };
+
+            self.store = name.to_owned();
+            self.store_arg = arg.to_owned();
+        } else {
+            log_error("Config parsing error: `session.store` is required when `session` present");
+            process::exit(-1);
+        }
+    }
 }

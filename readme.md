@@ -38,6 +38,8 @@ C API naming convention:
 - `{struct name}_{field}` - get field pointer,
 - `{struct name}_{method}` - struct method (first argument - `&mut self`).
 
+All Rust extern functions are prefixed with `rs_`.
+
 ## TODOs
 
 - [ ] Hardware dependent pool size

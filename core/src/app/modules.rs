@@ -1,14 +1,20 @@
 use std::{env, ffi::OsStr, fs::read_dir, io, path::Path};
-use bindings::db::DatabaseImpl;
+use bindings::{db::DatabaseImpl, rs::RustFnLinks, session::SessionStoreMeta};
 use libloading::{Library, Symbol};
 use ouroboros::self_referencing;
-use crate::{app::router::Router, utils::log::{log_error, log_info}};
+use crate::{app::router::Router, db::connection::rs_find_db_connection, utils::log::{log_error, log_info}};
 
 
+type RsLinkFn = extern "C" fn (links: &'static RustFnLinks);
 type InitModuleFn = extern "C" fn ();
 type ProvideDatabaseFn = fn () -> Box<dyn DatabaseImpl>;
+type ProvideSessionStoreFn = fn () -> Box<dyn SessionStoreMeta>;
 type ProvideModelsFn = extern "C" fn ();
 type ProvideRoutesFn = extern "C" fn (router: *mut Router);
+
+static FN_LINKS: RustFnLinks = RustFnLinks {
+	find_db_connection: rs_find_db_connection
+};
 
 #[self_referencing]
 pub struct Module {
@@ -17,10 +23,16 @@ pub struct Module {
 
 	#[borrows(lib)]
 	#[covariant]
+	rs_link: Option<Symbol<'this, RsLinkFn>>,
+	#[borrows(lib)]
+	#[covariant]
 	init_module: Option<Symbol<'this, InitModuleFn>>,
 	#[borrows(lib)]
 	#[covariant]
 	provide_database: Option<Symbol<'this, ProvideDatabaseFn>>,
+	#[borrows(lib)]
+	#[covariant]
+	provide_session_store: Option<Symbol<'this, ProvideSessionStoreFn>>,
 	#[borrows(lib)]
 	#[covariant]
 	provide_models: Option<Symbol<'this, ProvideModelsFn>>,
@@ -34,13 +46,22 @@ impl Module {
 		let builder = ModuleBuilder {
 			name: name.to_owned(),
 			lib: unsafe { Library::new(path) }?,
+			rs_link_builder: |lib: &Library| unsafe { lib.get(b"rs_link") }.ok(),
 			init_module_builder: |lib: &Library| unsafe { lib.get(b"init_module") }.ok(),
 			provide_database_builder: |lib: &Library| unsafe { lib.get(b"provide_database") }.ok(),
+			provide_session_store_builder: |lib: &Library| unsafe { lib.get(b"provide_session_store") }.ok(),
 			provide_models_builder: |lib: &Library| unsafe { lib.get(b"provide_models") }.ok(),
 			provide_routes_builder: |lib: &Library| unsafe { lib.get(b"provide_routes") }.ok(),
 		};
 
 		let module = builder.build();
+		module.with_rs_link(|symbol| {
+			if let Some(call) = symbol {
+                log_info(&format!("{}: calling rs_link", name));
+                call(&FN_LINKS);
+            }
+		});
+
 		module.with_init_module(|symbol| {
 			if let Some(call) = symbol {
                 log_info(&format!("{}: calling init", name));
@@ -62,6 +83,18 @@ impl Module {
             if let Some(call) = symbol {
 				let name = self.get_name();
                 log_info(&format!("{}: calling provide_database", name));
+                return Some(call());
+            } else {
+				return None;
+			}
+        })
+	}
+
+	pub fn provide_session_store (&self) -> Option<Box<dyn SessionStoreMeta>> {
+		self.with_provide_session_store(|symbol| {
+            if let Some(call) = symbol {
+				let name = self.get_name();
+                log_info(&format!("{}: calling provide_session_store", name));
                 return Some(call());
             } else {
 				return None;

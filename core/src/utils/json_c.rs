@@ -1,5 +1,22 @@
+use std::ptr::null;
+
 use json::JsonValue;
 use crate::c::{c_deinit, c_init, c_init_str, c_str, c_string, c_unwrap};
+
+
+#[no_mangle]
+pub unsafe extern "C" fn json_get (obj: &mut JsonValue, key: c_str) -> *mut JsonValue {
+	return &mut obj[c_string(key)];
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn json_as_str (value: &JsonValue) -> c_str {
+	if let Some(value_str) = value.as_str() {
+		return c_init_str(value_str);
+	} else {
+		return null();
+	}
+}
 
 #[no_mangle]
 pub extern "C" fn json_new_object () -> *mut JsonValue {

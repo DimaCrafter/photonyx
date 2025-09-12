@@ -17,3 +17,5 @@ libloading = "0.8.8"
 photonyx_macro = { path = "../macro" }
 bindings = { path = "../bindings" }
 ouroboros = "0.18.5"
+hmac = "0.12.1"
+sha2 = "0.10.9"

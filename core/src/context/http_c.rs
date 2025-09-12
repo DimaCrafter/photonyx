@@ -1,5 +1,5 @@
 use bindings::c::Slice;
-use crate::{c::c_unwrap, context::http::HttpContext, http::entity::Response};
+use crate::{c::c_unwrap, context::{http::HttpContext, session::Session}, http::entity::{Request, Response}};
 
 
 #[no_mangle]
@@ -8,8 +8,18 @@ pub extern "C" fn http_context_get_body_ref (ctx: &HttpContext) -> Slice<u8> {
 }
 
 #[no_mangle]
+pub extern "C" fn http_context_get_request (ctx: &mut HttpContext) -> *const Request {
+	return &ctx.req;
+}
+
+#[no_mangle]
 pub extern "C" fn http_context_get_response (ctx: &mut HttpContext) -> *mut Response {
 	return &mut ctx.res;
+}
+
+#[no_mangle]
+pub extern "C" fn http_context_get_session (ctx: &mut HttpContext) -> *mut Session {
+	return ctx.get_session();
 }
 
 #[no_mangle]

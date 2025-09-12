@@ -76,10 +76,10 @@ impl HttpHeaders {
         }
     }
 
-    pub fn get (&self, name: &str) -> Option<String> {
+    pub fn get (&self, name: &str) -> Option<&str> {
         for header in self {
             if header.name == name {
-                return Some(header.value.clone())
+                return Some(&header.value)
             }
         }
 
@@ -222,7 +222,7 @@ impl Request {
     }
 
     pub fn parse_content_length (&self) -> Option<usize> {
-        return self.headers.get("Content-Length").and_then(|len| usize::from_str(len.as_str()).ok());
+        return self.headers.get("Content-Length").and_then(|len| usize::from_str(len).ok());
     }
 }
 

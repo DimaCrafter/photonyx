@@ -22,6 +22,15 @@ impl<T> Slice<T> {
     }
 }
 
+impl<S: AsRef<str>> From<S> for Slice<u8> {
+    fn from (value: S) -> Self {
+        Slice {
+            ptr: value.as_ref().as_ptr(),
+            len: value.as_ref().len()
+        }
+    }
+}
+
 impl<'a, T> IntoIterator for &'a Slice<T> {
     type Item = &'a T;
     type IntoIter = core::slice::Iter<'a, T>;

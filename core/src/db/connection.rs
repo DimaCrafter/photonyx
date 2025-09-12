@@ -25,3 +25,7 @@ impl DatabaseConnections {
 pub fn init_database_connections_store (map: DatabaseConnections) {
 	DB_CONNECTIONS.get_or_init(|| map);
 }
+
+pub(crate) fn rs_find_db_connection (id: &str) -> Option<&'static Box<dyn DatabaseConnection>> {
+	return DB_CONNECTIONS.get().and_then(|conn| conn.find(id));
+}

@@ -1,7 +1,7 @@
-use std::{any::Any, ffi::{c_char, c_void}};
+use std::{any::Any, ffi::{c_char, c_void}, ptr::null};
 use json::JsonValue;
+use crate::{c::Slice, rs::rs_fn};
 
-use crate::c::Slice;
 
 pub type EntityHandle = *mut c_void;
 pub type EntityInitFn = extern "C" fn () -> *mut c_void;
@@ -13,7 +13,45 @@ pub struct ModelFieldMeta {
     pub length: usize,
     pub optional: bool,
     pub enum_values: *const *const c_char,
-    pub enum_size: usize
+    pub enum_size: usize,
+    pub constraints: Vec<ModelFieldConstraint>
+}
+
+impl ModelFieldMeta {
+    pub fn new () -> Self {
+        ModelFieldMeta {
+            type_id: ModelFieldType::Unknown,
+            length: 0,
+            optional: false,
+            enum_values: null(),
+            enum_size: 0,
+            constraints: Vec::new()
+        }
+    }
+}
+
+pub enum ModelFieldConstraint {
+    Length { value: u32 },
+    PrimaryKey,
+    Link {
+        dst_table: String,
+        dst_column: String,
+        delete: LinkPolicy,
+        update: LinkPolicy
+    }
+}
+
+#[derive(Debug)]
+#[repr(u8)]
+pub enum LinkPolicy {
+    /// Link will be used just as key
+    None,
+    /// Service.user_id --> User: operation on User will be restricted if Service exist
+    Restrict,
+    /// Service.user_id --> User: operation on User will cause some operation on Service
+    Cascade,
+    /// Service.user_id --> User: operation on User will set Service.user_id to null
+    SetNull
 }
 
 pub struct ModelField {
@@ -44,7 +82,8 @@ pub enum ModelFieldType {
 pub type EntitySetAnyField = extern "C" fn (entity: *mut c_void, value: *const c_void);
 
 pub trait DatabaseConnection: Sync + Send {
-	fn prepare_model (&mut self, model: &mut Box<dyn ModelMetaImpl>);
+	fn auto_migrate (&mut self, model: &mut Box<dyn ModelMetaImpl>);
+    fn as_any (&self) -> &dyn Any;
 
 	fn new_query (&self, collection: &str) -> Box<dyn QueryBuilder>;
 	fn exec_first (&mut self, model: &Box<dyn ModelMetaImpl>, query_any: Box<dyn Any>) -> Result<Option<EntityHandle>, String>;
@@ -52,6 +91,7 @@ pub trait DatabaseConnection: Sync + Send {
 }
 
 pub trait DatabaseImpl {
+    fn get_id (&self) -> String;
     fn connect (&self, raw_config: &JsonValue) -> Result<Box<dyn DatabaseConnection>, String>;
 }
 
@@ -61,8 +101,11 @@ pub trait ModelMetaImpl {
 	fn deinit_entity (&self, ptr: EntityHandle);
 	fn get_name (&self) -> &str;
 
-	fn add_field (&mut self, name: String, meta: ModelFieldMeta, setter: EntitySetAnyField);
+	fn add_field (&mut self, name: String, setter: EntitySetAnyField) -> &mut ModelField;
     fn get_fields (&self) -> &Vec<ModelField>;
+
+    fn add_unique_key (&mut self, compound: &Slice<Slice<u8>>);
+    fn get_unique_keys (&self) -> &Vec<Vec<String>>;
 }
 
 pub trait QueryBuilder {
@@ -98,4 +141,9 @@ impl Drop for EntityList {
             (self.deinit)(*entity);
         }
     }
+}
+
+#[inline]
+pub fn find_db_connection (key: &str) -> Option<&'static Box<dyn DatabaseConnection>> {
+    return (rs_fn().find_db_connection)(key);
 }

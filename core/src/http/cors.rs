@@ -9,7 +9,7 @@ pub struct Cors {
 impl Cors {
 	pub fn new (req: &Request) -> Self {
 		Cors {
-			origin: req.headers.get("origin").unwrap_or("*".to_string())
+			origin: req.headers.get("origin").unwrap_or("*").to_owned()
 		}
 	}
 

@@ -4,7 +4,7 @@ use json::{object, JsonValue};
 macro_rules! validator_struct {
 	{ $name:ident, $( $field:ident : $type:ty ),* } => {
 		#[derive(Default, Debug)]
-		struct $name {
+		pub struct $name {
 			$($field: $type,)*
 		}
 	};

@@ -1,4 +1,14 @@
-use crate::{c::{c_deinit, c_init, c_str, c_string}, http::{codes::HttpCode, entity::{HttpHeaders, Response, ResponseType}}};
+use std::ptr::null;
+
+use bindings::c::Slice;
+
+use crate::{c::{c_deinit, c_init, c_str, c_string}, http::{codes::HttpCode, entity::{HttpHeaders, Request, Response, ResponseType}}};
+
+
+#[no_mangle]
+pub extern "C" fn request_headers (req: &Request) -> *const HttpHeaders {
+	return &req.headers;
+}
 
 #[no_mangle]
 pub extern "C" fn response_new () -> *mut Response {
@@ -26,6 +36,21 @@ pub unsafe extern "C" fn response_set_payload (res: &mut Response, r_ptr: *mut u
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn response_drop (res: *mut Response) {
+	c_deinit(res)
+}
+// todo: replace c_str with Slice<u8> to prevent useless slice -> c_str -> slice converting
+
+#[no_mangle]
+pub unsafe extern "C" fn http_headers_get (headers: &HttpHeaders, name: &Slice<u8>) -> *const Slice<u8> {
+	if let Some(value) = headers.get(name.as_str_unchecked()) {
+		return c_init(|| value.into());
+	} else {
+		return null();
+	}
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn http_headers_set (headers: &mut HttpHeaders, name: c_str, value: c_str) {
 	headers.set(c_string(name), c_string(value));
 }
@@ -38,9 +63,4 @@ pub unsafe extern "C" fn http_headers_set_default (headers: &mut HttpHeaders, na
 #[no_mangle]
 pub unsafe extern "C" fn http_headers_set_normal (headers: &mut HttpHeaders, name: c_str, value: c_str) {
 	headers.set_normal(c_string(name), c_string(value));
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn response_drop (res: *mut Response) {
-	c_deinit(res)
 }

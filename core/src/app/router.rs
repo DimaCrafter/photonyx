@@ -1,17 +1,24 @@
 use std::collections::HashMap;
-use crate::{context::http::HttpContext, http::entity::ResponseRet, utils::log::log_info};
+use crate::{context::http::HttpContext, http::{codes::HttpCode, entity::{HttpConnection, Request, Response, ResponseRet}}, utils::log::log_info};
 
-type ActionCallerType = dyn Fn(&mut HttpContext) -> ResponseRet + Sync + Send + 'static;
+type ActionFn = dyn Fn(&mut HttpContext) -> ResponseRet + Sync + Send + 'static;
+type MiddlewareFn = dyn Fn(&mut HttpContext) -> MiddlewareResult + Sync + Send + 'static;
+
+#[repr(u8)]
+pub enum MiddlewareResult {
+    Continue,
+    Stop
+}
 
 pub struct Route {
     pub matcher: PathMatcher,
-    pub call: Box<ActionCallerType>,
+    pub call: Box<ActionFn>,
     // Module name can be used for unloading later
     pub origin_module: Option<String>
 }
 
 impl Route {
-    pub fn new (pattern: String, action: Box<ActionCallerType>) -> Self {
+    pub fn new (pattern: String, action: Box<ActionFn>) -> Self {
         return Route {
             matcher: PathMatcher::from_pattern(pattern),
             call: action,
@@ -22,6 +29,8 @@ impl Route {
 
 pub struct Router {
     pub routes: Vec<Route>,
+    middlewares: Vec<(WildcardMatcher, Box<MiddlewareFn>)>,
+    middleware_wildcards: Vec<Box<MiddlewareFn>>,
     origin_module: Option<String>
 }
 
@@ -29,11 +38,12 @@ impl Router {
     pub const fn empty () -> Self {
         Router {
             routes: Vec::new(),
+            middlewares: Vec::new(),
+            middleware_wildcards: Vec::new(),
             origin_module: None
         }
     }
 
-    #[inline]
     pub fn register<Caller: Fn(&mut HttpContext) -> ResponseRet + Sync + Send + 'static> (&mut self, pattern: String, action: Caller) {
         let reg_msg = format!("registered route '{pattern}' to {:p}", &action);
 
@@ -48,7 +58,23 @@ impl Router {
         self.routes.push(route);
     }
 
-    pub fn match_path (&self, path: &String) -> Option<(&Route, HashMap<String, String>)> {
+    pub fn use_middleware<Caller: Fn(&mut HttpContext) -> MiddlewareResult + Sync + Send + 'static> (&mut self, pattern: String, middleware: Caller) {
+        let reg_msg = format!("registered middleware '{pattern}' to {:p}", &middleware);
+
+        if pattern == "*" {
+            self.middleware_wildcards.push(Box::new(middleware));
+        } else {
+            self.middlewares.push((WildcardMatcher::from_pattern(pattern), Box::new(middleware)));
+        }
+
+        if let Some(ref mod_name) = self.origin_module {
+            log_info(&format!("{mod_name}: {reg_msg}"));
+        } else {
+            log_info(&format!("core: {reg_msg}"));
+        }
+    }
+
+    pub fn match_action (&self, path: &String) -> Option<(&Route, HashMap<String, String>)> {
         for route in &self.routes {
             if let Some(params) = route.matcher.exec(&path) {
                 return Some((route, params));
@@ -56,6 +82,48 @@ impl Router {
         }
 
         return None;
+    }
+
+    pub fn call_action<Connection: HttpConnection> (&self, connection: &Connection, req: Request) -> Option<Response> {
+        let (endpoint, params) = match self.match_action(&req.path) {
+            Some(pair) => pair,
+            None => return None
+        };
+
+        let mut ctx = HttpContext::from(connection, req, params);
+        for (pattern, middleware) in &self.middlewares {
+            if pattern.exec(&ctx.req.path) {
+                match middleware(&mut ctx) {
+                    MiddlewareResult::Continue => continue,
+                    MiddlewareResult::Stop => break
+                }
+            }
+        }
+
+        if !matches!(ctx.res.code, HttpCode::NotSent) {
+            return Some(ctx.finalize());
+        }
+
+        for middleware in &self.middleware_wildcards {
+            match middleware(&mut ctx) {
+                MiddlewareResult::Continue => continue,
+                MiddlewareResult::Stop => break
+            }
+        }
+
+        if !matches!(ctx.res.code, HttpCode::NotSent) {
+            return Some(ctx.finalize());
+        }
+
+        match (endpoint.call)(&mut ctx) {
+            ResponseRet::Replace(response) => {
+                ctx.res = response;
+                return Some(ctx.finalize());
+            },
+            _ => {
+                return Some(ctx.finalize());
+            }
+        }
     }
 
     pub fn with_module<C: Fn (&mut Self)> (&mut self, name: &str, consume: C) {
@@ -111,7 +179,7 @@ impl PathMatcher {
         return PathMatcher(sequence);
     }
 
-    pub fn exec (&self, path: &String) -> Option<HashMap<String, String>> {
+    pub fn exec (&self, path: &str) -> Option<HashMap<String, String>> {
         let mut offset = 0usize;
         let mut path_iter = path.chars();
         let mut params: HashMap<String, String> = HashMap::new();
@@ -151,5 +219,80 @@ impl PathMatcher {
         }
 
         return Some(params);
+    }
+}
+
+
+enum WildcardPart {
+    String(String),
+    Star(Option<char>)
+}
+
+pub struct WildcardMatcher(Vec<WildcardPart>);
+impl WildcardMatcher {
+    pub fn from_pattern (pattern: String) -> Self {
+        let mut sequence = Vec::new();
+
+        let mut tmp = String::new();
+        let mut is_star = false;
+
+        for ch in pattern.chars() {
+            if is_star {
+                sequence.push(WildcardPart::Star(Some(ch)));
+                is_star = false;
+            } else if ch == '*' {
+                if tmp.len() != 0 {
+                    sequence.push(WildcardPart::String(tmp));
+                    tmp = String::new();
+                }
+
+                is_star = true;
+            } else {
+                tmp.push(ch);
+            }
+        }
+
+        if is_star {
+            sequence.push(WildcardPart::Star(None));
+        } else if tmp.len() != 0 {
+            sequence.push(WildcardPart::String(tmp));
+        }
+
+        return WildcardMatcher(sequence);
+    }
+
+    pub fn exec (&self, path: &str) -> bool {
+        let mut path_iter = path.chars();
+
+        for part in &self.0 {
+            match part {
+                WildcardPart::String(value) => {
+                    let mut part_iter = value.chars();
+                    loop {
+                        if let Some(ch) = part_iter.next() {
+                            let next_ch = path_iter.next();
+                            if next_ch.is_none() || ch != next_ch.unwrap() {
+                                return false;
+                            }
+                        } else if path_iter.next().is_none() {
+                            break;
+                        } else {
+                            return false;
+                        }
+                    }
+                }
+                WildcardPart::Star(stop_char) => {
+                    if let Some(stop) = stop_char {
+                        while let Some(next) = path_iter.next() {
+                            if next == *stop { break; }
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        return true;
     }
 }

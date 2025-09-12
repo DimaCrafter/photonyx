@@ -1,5 +1,5 @@
 use std::ffi::c_void;
-use bindings::db::{EntityDeinitFn, EntityInitFn, EntityList, EntitySetAnyField, ModelField, ModelFieldMeta, ModelMetaImpl};
+use bindings::{c::Slice, db::{EntityDeinitFn, EntityInitFn, EntityList, EntitySetAnyField, ModelField, ModelFieldMeta, ModelMetaImpl}};
 use crate::c::{c_str, c_string};
 
 
@@ -8,7 +8,8 @@ pub struct ModelMeta {
 	pub name: String,
 	pub init: EntityInitFn,
 	pub deinit: EntityDeinitFn,
-	pub fields: Vec<ModelField>
+	pub fields: Vec<ModelField>,
+	pub unique_keys: Vec<Vec<String>>
 }
 
 impl ModelMetaImpl for ModelMeta {
@@ -28,28 +29,25 @@ impl ModelMetaImpl for ModelMeta {
 		return &self.name;
 	}
 
-	fn add_field (&mut self, name: String, meta: ModelFieldMeta, setter: EntitySetAnyField) {
-		// if let ModelFieldType::Enum = meta.type_id {
-		// 	println!("add_field {name} = enum, {}", meta.length);
-		// 	for i in 0..meta.enum_size {
-		// 		let ptr = unsafe { meta.enum_values.offset(i as isize) };
-		// 		let name = unsafe { c_string(*ptr) };
-		// 		println!("- {name}");
-		// 	}
-		// }
-		self.fields.push(ModelField { name, meta, setter });
+	fn add_field (&mut self, name: String, setter: EntitySetAnyField) -> &mut ModelField {
+		self.fields.push(ModelField { name, meta: ModelFieldMeta::new(), setter });
+		return self.fields.last_mut().unwrap();
 	}
 
 	fn get_fields (&self) -> &Vec<ModelField> {
 		return &self.fields;
 	}
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn model_meta_add_field (
-	model: &mut Box<dyn ModelMetaImpl>,
-	name: c_str, meta: ModelFieldMeta,
-	setter: EntitySetAnyField
-) {
-	model.add_field(c_string(name), meta, setter);
+	fn add_unique_key (&mut self, compound: &Slice<Slice<u8>>) {
+		self.unique_keys.push(
+			compound
+				.into_iter()
+				.map(|field| unsafe { field.as_str_unchecked() }.to_owned())
+				.collect()
+		);
+	}
+
+	fn get_unique_keys (&self) -> &Vec<Vec<String>> {
+		return &self.unique_keys;
+	}
 }

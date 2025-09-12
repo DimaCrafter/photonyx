@@ -18,7 +18,7 @@ pub unsafe extern "C" fn find_db_connection (id: c_str) -> *const Box<dyn Databa
 
 #[no_mangle]
 pub unsafe extern "C" fn db_connection_prepare_model (
-	conn: &mut Box<dyn DatabaseConnection>,
+	_conn: &mut Box<dyn DatabaseConnection>,
 	name: c_str,
 	init: EntityInitFn,
 	deinit: EntityDeinitFn
@@ -29,11 +29,17 @@ pub unsafe extern "C" fn db_connection_prepare_model (
 	let reg_msg = format!("registered model {} {{ init = {:p}, deinit = {:p} }}", &name, init, deinit);
 	log_info(&reg_msg);
 
-	let model = ModelMeta { origin_module: None, name, init, deinit, fields: Vec::new() };
-	let mut boxed: Box<dyn ModelMetaImpl> = Box::new(model);
-	conn.prepare_model(&mut boxed);
-
+	let model = ModelMeta { origin_module: None, name, init, deinit, fields: Vec::new(), unique_keys: Vec::new() };
+	let boxed: Box<dyn ModelMetaImpl> = Box::new(model);
 	return Box::into_raw(boxed.into());
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn db_connection_auto_migrate (
+	conn: &mut Box<dyn DatabaseConnection>,
+	model: &mut Box<dyn ModelMetaImpl>
+) {
+	conn.auto_migrate(model);
 }
 
 #[no_mangle]

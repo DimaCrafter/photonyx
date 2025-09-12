@@ -1,6 +1,6 @@
 use std::{collections::HashMap, net::IpAddr};
 use json::{object, JsonValue};
-use crate::http::{codes::HttpCode, entity::{HttpConnection, HttpHeaders, Request, Response, ResponseRet, ResponseType}};
+use crate::{app::config::CONFIG, context::session::Session, http::{codes::HttpCode, entity::{HttpConnection, HttpHeaders, Request, Response, ResponseRet, ResponseType}}, utils::log::log_warning};
 use crate::utils::validator::*;
 
 
@@ -9,7 +9,8 @@ pub struct HttpContext {
 	pub req: Request,
 	pub res: Response,
 	pub params: HashMap<String, String>,
-	pub address: IpAddr
+	pub address: IpAddr,
+	session: Option<Session>
 }
 
 impl HttpContext {
@@ -22,17 +23,37 @@ impl HttpContext {
 				payload: ResponseType::NoContent
 			},
 			params,
-			address: connection.get_address()
+			address: connection.get_address(),
+			session: None
 		}
 	}
 
+	pub fn get_session (&mut self) -> &mut Session {
+		if self.session.is_none() {
+			if CONFIG.session.is_none() {
+				log_warning("Using `HttpContext::get_session` when sessions are disabled!");
+				return Session::empty_ref();
+			}
+
+			if let Some(session_header) = self.get_header("session") {
+				// In case that session token is invalid or expired it's better to serve
+				// the client with a new session rather than just throwing an error.
+				self.session = Session::decode(&session_header).or_else(|| Some(Session::new()));
+			} else {
+				self.session = Some(Session::new());
+			}
+		}
+
+		return self.session.as_mut().unwrap();
+	}
+
 	#[inline]
-	pub fn get_header (&self, name: &str) -> Option<String> {
+	pub fn get_header (&self, name: &str) -> Option<&str> {
 		return self.req.headers.get(name);
 	}
 
 	#[inline]
-	pub fn get_header_default (&self, name: &str, default: String) -> String {
+	pub fn get_header_default<'a> (&'a self, name: &str, default: &'a str) -> &'a str {
 		return self.get_header(name).unwrap_or(default);
 	}
 
@@ -98,5 +119,15 @@ impl HttpContext {
 	#[inline]
 	pub fn drop (self) -> ResponseRet {
 		return ResponseRet::Replace(Response::drop());
+	}
+
+	pub fn finalize (mut self) -> Response {
+		if let Some(session) = &self.session {
+			if session.need_header_refresh {
+				self.set_header("session", session.crypt());
+			}
+		}
+
+		return self.res;
 	}
 }
