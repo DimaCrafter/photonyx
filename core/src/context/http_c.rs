@@ -1,3 +1,5 @@
+use std::ffi::c_void;
+
 use bindings::c::Slice;
 use crate::{c::c_unwrap, context::{http::HttpContext, session::Session}, http::entity::{Request, Response}};
 
@@ -5,6 +7,16 @@ use crate::{c::c_unwrap, context::{http::HttpContext, session::Session}, http::e
 #[no_mangle]
 pub extern "C" fn http_context_get_body_ref (ctx: &HttpContext) -> Slice<u8> {
 	return Slice::for_vec(&ctx.req.body);
+}
+
+#[no_mangle]
+pub extern "C" fn http_context_get_meta_ref (ctx: &HttpContext) -> *mut c_void {
+	return ctx._meta_ptr;
+}
+
+#[no_mangle]
+pub extern "C" fn http_context_set_meta_ref (ctx: &mut HttpContext, ptr: *mut c_void) {
+	ctx._meta_ptr = ptr;
 }
 
 #[no_mangle]

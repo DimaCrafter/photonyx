@@ -19,3 +19,5 @@ bindings = { path = "../bindings" }
 ouroboros = "0.18.5"
 hmac = "0.12.1"
 sha2 = "0.10.9"
+chrono = "0.4.42"
+email_syntax_verify_opt = "0.1.0"

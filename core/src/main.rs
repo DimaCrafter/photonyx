@@ -76,5 +76,10 @@ pub fn main () {
         module.provide_routes(&mut app.router);
     }
 
+    // stage 3
+    for module in &app.modules {
+        module.startup();
+    }
+
     app::server::start_server(app);
 }

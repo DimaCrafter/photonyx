@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::IpAddr};
+use std::{collections::HashMap, ffi::c_void, net::IpAddr, ptr::null_mut};
 use json::{object, JsonValue};
 use crate::{app::config::CONFIG, context::session::Session, http::{codes::HttpCode, entity::{HttpConnection, HttpHeaders, Request, Response, ResponseRet, ResponseType}}, utils::log::log_warning};
 use crate::utils::validator::*;
@@ -6,6 +6,8 @@ use crate::utils::validator::*;
 
 #[derive(Debug)]
 pub struct HttpContext {
+	pub(crate) _meta_ptr: *mut c_void,
+
 	pub req: Request,
 	pub res: Response,
 	pub params: HashMap<String, String>,
@@ -24,7 +26,8 @@ impl HttpContext {
 			},
 			params,
 			address: connection.get_address(),
-			session: None
+			session: None,
+			_meta_ptr: null_mut()
 		}
 	}
 

@@ -45,3 +45,13 @@ impl Slice<u8> {
         return unsafe { std::str::from_utf8_unchecked(self.as_native()) };
     }
 }
+
+#[inline]
+pub fn disown<T: Sized> (value: T) -> *mut T {
+    return Box::into_raw(Box::new(value));
+}
+
+#[inline]
+pub unsafe fn own<T> (ptr: *mut T) -> Box<T> {
+    return Box::from_raw(ptr);
+}

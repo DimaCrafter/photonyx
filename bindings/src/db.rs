@@ -28,6 +28,37 @@ impl ModelFieldMeta {
             constraints: Vec::new()
         }
     }
+
+    pub fn iter_enum (&self) -> ModelFieldEnumIter {
+        ModelFieldEnumIter {
+            values: self.enum_values,
+            size: self.enum_size,
+            step: self.length,
+            offset: 0
+        }
+    }
+}
+
+pub struct ModelFieldEnumIter {
+    values: *const *const c_char,
+    size: usize,
+    step: usize,
+    offset: usize
+}
+
+impl Iterator for ModelFieldEnumIter {
+    type Item = String;
+
+    fn next (&mut self) -> Option<Self::Item> {
+        if self.offset == self.size {
+            return None;
+        }
+
+        let ptr = unsafe { self.values.offset(self.offset as isize) };
+        self.offset += self.step;
+
+        return Some(unsafe { c_string(*ptr) });
+    }
 }
 
 pub enum ModelFieldConstraint {
@@ -75,8 +106,8 @@ pub enum ModelFieldType {
     I64,
     Bool,
     String,
-    Array,
     Enum,
+    DateTime
 }
 
 pub type EntitySetAnyField = extern "C" fn (entity: *mut c_void, value: *const c_void);
@@ -86,6 +117,7 @@ pub trait DatabaseConnection: Sync + Send {
     fn as_any (&self) -> &dyn Any;
 
 	fn new_query (&self, collection: &str) -> Box<dyn QueryBuilder>;
+	fn exec_value (&mut self, query_any: Box<dyn Any>) -> Result<Option<Box<dyn Any>>, String>;
 	fn exec_first (&mut self, model: &Box<dyn ModelMetaImpl>, query_any: Box<dyn Any>) -> Result<Option<EntityHandle>, String>;
     fn exec_all (&mut self, model: &Box<dyn ModelMetaImpl>, query_any: Box<dyn Any>) -> Result<EntityList, String>;
 }
@@ -112,7 +144,9 @@ pub trait QueryBuilder {
 	fn count (&mut self, query: &JsonValue);
 	fn build (self: Box<Self>) -> Box<dyn Any>;
     fn select (&mut self, projection: &Slice<Slice<u8>>);
+    fn select_raw (&mut self, stmt: &str);
     fn query (&mut self, conditions: &JsonValue);
+    fn limit (&mut self, offset: u32, length: u32);
     fn debug (&self);
 }
 
@@ -146,4 +180,31 @@ impl Drop for EntityList {
 #[inline]
 pub fn find_db_connection (key: &str) -> Option<&'static Box<dyn DatabaseConnection>> {
     return (rs_fn().find_db_connection)(key);
+}
+
+// TODO: DRY
+#[allow(non_camel_case_types)]
+pub type c_str = *const std::ffi::c_char;
+
+pub unsafe fn c_string (ptr: c_str) -> String {
+	use std::ptr::slice_from_raw_parts;
+	let raw = &*slice_from_raw_parts(ptr as *const u8, c_strlen(ptr));
+	return String::from_utf8_lossy(raw).into_owned();
+}
+
+pub fn c_strlen (raw: c_str) -> usize {
+	if raw.is_null() {
+        return 0;
+    }
+
+    let mut len = 0;
+    unsafe {
+        let mut ptr = raw;
+        while *ptr != 0 {
+            len += 1;
+            ptr = ptr.add(1);
+        }
+    }
+
+    return len;
 }

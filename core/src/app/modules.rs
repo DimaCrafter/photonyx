@@ -11,6 +11,7 @@ type ProvideDatabaseFn = fn () -> Box<dyn DatabaseImpl>;
 type ProvideSessionStoreFn = fn () -> Box<dyn SessionStoreMeta>;
 type ProvideModelsFn = extern "C" fn ();
 type ProvideRoutesFn = extern "C" fn (router: *mut Router);
+type StartupFn = extern "C" fn ();
 
 static FN_LINKS: RustFnLinks = RustFnLinks {
 	find_db_connection: rs_find_db_connection
@@ -39,6 +40,9 @@ pub struct Module {
 	#[borrows(lib)]
 	#[covariant]
 	provide_routes: Option<Symbol<'this, ProvideRoutesFn>>,
+	#[borrows(lib)]
+	#[covariant]
+	startup: Option<Symbol<'this, StartupFn>>,
 }
 
 impl Module {
@@ -52,6 +56,7 @@ impl Module {
 			provide_session_store_builder: |lib: &Library| unsafe { lib.get(b"provide_session_store") }.ok(),
 			provide_models_builder: |lib: &Library| unsafe { lib.get(b"provide_models") }.ok(),
 			provide_routes_builder: |lib: &Library| unsafe { lib.get(b"provide_routes") }.ok(),
+			startup_builder: |lib: &Library| unsafe { lib.get(b"startup") }.ok(),
 		};
 
 		let module = builder.build();
@@ -118,6 +123,16 @@ impl Module {
 				let name = self.get_name();
                 log_info(&format!("{}: calling provide_routes", name));
                 router.with_module(name, |router| call(router));
+            }
+        });
+	}
+
+	pub fn startup (&self) {
+		self.with_startup(|symbol| {
+            if let Some(call) = symbol {
+				let name = self.get_name();
+                log_info(&format!("{}: calling startup", name));
+                call();
             }
         });
 	}
