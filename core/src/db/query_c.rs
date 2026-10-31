@@ -1,7 +1,7 @@
 use std::ptr::null_mut;
-use bindings::{c::Slice, db::{DatabaseConnection, EntityHandle, EntityList, ModelMetaImpl, QueryBuilder}};
+use bindings::{c::Slice, db::{DatabaseConnection, EntityHandle, EntityList, ModelMeta, QueryBuilder}};
 use json::JsonValue;
-use crate::c::{c_init, c_unwrap};
+use crate::{c::{c_deinit, c_init}, utils::log::log_error};
 
 
 #[no_mangle]
@@ -15,6 +15,16 @@ pub extern "C" fn query_builder_where (query: &mut Box<dyn QueryBuilder>, condit
 }
 
 #[no_mangle]
+pub extern "C" fn query_builder_limit (query: &mut Box<dyn QueryBuilder>, offset: u32, length: u32) {
+	query.limit(offset, length);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn query_builder_deinit (query_ptr: *mut Box<dyn QueryBuilder>) {
+	c_deinit(query_ptr);
+}
+
+#[no_mangle]
 pub extern "C" fn query_builder_debug (query: &mut Box<dyn QueryBuilder>) {
 	query.debug();
 }
@@ -22,17 +32,17 @@ pub extern "C" fn query_builder_debug (query: &mut Box<dyn QueryBuilder>) {
 #[no_mangle]
 pub unsafe extern "C" fn db_connection_exec_first (
 	conn: &mut Box<dyn DatabaseConnection>,
-	model: &Box<dyn ModelMetaImpl>,
-	query_ptr: *mut Box<dyn QueryBuilder>
+	model: &ModelMeta,
+	query: &Box<dyn QueryBuilder>
 ) -> EntityHandle {
-	let query_any = c_unwrap(query_ptr).build();
+	let query_any = query.build();
 	match conn.exec_first(model, query_any) {
 		Ok(value_opt) => match value_opt {
 			Some(value) => return value,
 			None => return null_mut()
 		}
 		Err(error) => {
-			println!("Query failed: {error}");
+			log_error(&format!("Query failed: {error}"));
 			return null_mut();
 		}
 	};
@@ -41,16 +51,16 @@ pub unsafe extern "C" fn db_connection_exec_first (
 #[no_mangle]
 pub unsafe extern "C" fn db_connection_exec_all (
 	conn: &mut Box<dyn DatabaseConnection>,
-	model: &Box<dyn ModelMetaImpl>,
-	query_ptr: *mut Box<dyn QueryBuilder>
+	model: &ModelMeta,
+	query: &Box<dyn QueryBuilder>
 ) -> *mut EntityList {
-	let query_any = c_unwrap(query_ptr).build();
+	let query_any = query.build();
 	match conn.exec_all(model, query_any) {
 		Ok(result) => {
 			return c_init(|| result);
 		}
 		Err(error) => {
-			println!("Query failed: {error}");
+			log_error(&format!("Query failed: {error}"));
 			return c_init(|| model.init_entity_list());
 		}
 	};
@@ -59,10 +69,10 @@ pub unsafe extern "C" fn db_connection_exec_all (
 #[no_mangle]
 pub unsafe extern "C" fn db_connection_count(
 	conn: &mut Box<dyn DatabaseConnection>,
-	model: &Box<dyn ModelMetaImpl>,
+	model: &ModelMeta,
 	conditions: &JsonValue
 ) -> u32 {
-	let mut query = conn.new_query(model.get_name());
+	let mut query = conn.new_query(&model.table);
 	query.count(conditions);
 
 	let query_any = query.build();
@@ -70,7 +80,7 @@ pub unsafe extern "C" fn db_connection_count(
 		Ok(res) => res,
 		Err(error) => {
 			// todo: propagate errors
-			println!("Query failed: {error}");
+			log_error(&format!("Query failed: {error}"));
 			return 0;
 		}
 	};
@@ -94,10 +104,10 @@ pub unsafe extern "C" fn db_connection_count(
 #[no_mangle]
 pub unsafe extern "C" fn db_connection_exists(
 	conn: &mut Box<dyn DatabaseConnection>,
-	model: &Box<dyn ModelMetaImpl>,
+	model: &ModelMeta,
 	conditions: &JsonValue
 ) -> bool {
-	let mut query = conn.new_query(model.get_name());
+	let mut query = conn.new_query(&model.table);
 	query.select_raw("1");
 	query.query(conditions);
 
@@ -108,7 +118,7 @@ pub unsafe extern "C" fn db_connection_exists(
 		},
 		Err(error) => {
 			// todo: propagate errors
-			println!("Query failed: {error}");
+			log_error(&format!("Query failed: {error}"));
 			return false;
 		}
 	}

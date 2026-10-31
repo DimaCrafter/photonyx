@@ -1,0 +1,12 @@
+[package]
+name = "onyx"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bindings.workspace = true
+photonyx-models = { workspace = true, features = ["parse"] }
+photonyx-sql-shared.workspace = true
+json.workspace = true
+libloading.workspace = true
+chrono.workspace = true

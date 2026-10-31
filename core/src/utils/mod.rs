@@ -59,9 +59,9 @@ pub fn parse_duration (input: &str) -> Option<Duration> {
     } else if input.ends_with("h") {
         return Some(Duration::from_hours(input[..input.len() - 1].parse().ok()?));
     } else if input.ends_with("d") {
-        return Some(Duration::from_days(input[..input.len() - 1].parse().ok()?));
+        return Some(Duration::from_secs(input[..input.len() - 1].parse::<u64>().ok()? * 86_400));
     } else if input.ends_with("w") {
-        return Some(Duration::from_weeks(input[..input.len() - 1].parse().ok()?));
+        return Some(Duration::from_secs(input[..input.len() - 1].parse::<u64>().ok()? * 604_800));
     } else {
         return None;
     }

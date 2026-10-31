@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-json = "0.12.4"
-chrono = "0.4.42"
+json.workspace = true
+chrono.workspace = true
+photonyx-models.workspace = true

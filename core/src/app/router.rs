@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::{context::http::HttpContext, http::{codes::HttpCode, entity::{HttpConnection, Request, Response, ResponseRet}}, utils::log::log_info};
+use crate::{context::http::HttpContext, http::{codes::HttpCode, entity::{HttpConnection, Request, Response, ResponseExit, ResponseRet}}, utils::log::log_info};
 
 type ActionFn = dyn Fn(&mut HttpContext) -> ResponseRet + Sync + Send + 'static;
 type MiddlewareFn = dyn Fn(&mut HttpContext) -> MiddlewareResult + Sync + Send + 'static;
@@ -116,7 +116,7 @@ impl Router {
         }
 
         match (endpoint.call)(&mut ctx) {
-            ResponseRet::Replace(response) => {
+            Err(ResponseExit::Replace(response)) => {
                 ctx.res = response;
                 return Some(ctx.finalize());
             },
@@ -223,76 +223,64 @@ impl PathMatcher {
 }
 
 
-enum WildcardPart {
-    String(String),
-    Star(Option<char>)
+pub struct WildcardMatcher {
+    parts: Vec<String>
 }
 
-pub struct WildcardMatcher(Vec<WildcardPart>);
 impl WildcardMatcher {
     pub fn from_pattern (pattern: String) -> Self {
-        let mut sequence = Vec::new();
-
-        let mut tmp = String::new();
-        let mut is_star = false;
-
-        for ch in pattern.chars() {
-            if is_star {
-                sequence.push(WildcardPart::Star(Some(ch)));
-                is_star = false;
-            } else if ch == '*' {
-                if tmp.len() != 0 {
-                    sequence.push(WildcardPart::String(tmp));
-                    tmp = String::new();
-                }
-
-                is_star = true;
-            } else {
-                tmp.push(ch);
-            }
-        }
-
-        if is_star {
-            sequence.push(WildcardPart::Star(None));
-        } else if tmp.len() != 0 {
-            sequence.push(WildcardPart::String(tmp));
-        }
-
-        return WildcardMatcher(sequence);
+        return WildcardMatcher { parts: pattern.split('*').map(str::to_owned).collect() };
     }
 
     pub fn exec (&self, path: &str) -> bool {
-        let mut path_iter = path.chars();
+        let (first, rest) = self.parts.split_first().expect("split gives at least one part");
+        let Some((last, middle)) = rest.split_last() else {
+            return path == first;
+        };
 
-        for part in &self.0 {
-            match part {
-                WildcardPart::String(value) => {
-                    let mut part_iter = value.chars();
-                    loop {
-                        if let Some(ch) = part_iter.next() {
-                            let next_ch = path_iter.next();
-                            if next_ch.is_none() || ch != next_ch.unwrap() {
-                                return false;
-                            }
-                        } else if path_iter.next().is_none() {
-                            break;
-                        } else {
-                            return false;
-                        }
-                    }
-                }
-                WildcardPart::Star(stop_char) => {
-                    if let Some(stop) = stop_char {
-                        while let Some(next) = path_iter.next() {
-                            if next == *stop { break; }
-                        }
-                    } else {
-                        break;
-                    }
-                }
+        let Some(mut tail) = path.strip_prefix(first.as_str()) else {
+            return false;
+        };
+
+        for part in middle {
+            match tail.find(part.as_str()) {
+                Some(index) => tail = &tail[index + part.len()..],
+                None => return false
             }
         }
 
-        return true;
+        return tail.len() >= last.len() && tail.ends_with(last.as_str());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WildcardMatcher;
+
+    fn matches (pattern: &str, path: &str) -> bool {
+        return WildcardMatcher::from_pattern(pattern.to_owned()).exec(path);
+    }
+
+    #[test]
+    fn wildcard () {
+        assert!(matches("/order/confirm", "/order/confirm"));
+        assert!(!matches("/order/confirm", "/order/confirm/x"));
+        assert!(!matches("/order/confirm", "/order"));
+
+        assert!(matches("/profile/*", "/profile/ping"));
+        assert!(matches("/profile/*", "/profile/a/b"));
+        assert!(matches("/profile/*", "/profile/"));
+        assert!(!matches("/profile/*", "/profile"));
+        assert!(!matches("/profile/*", "/profiles/x"));
+
+        assert!(matches("/admin*", "/admin"));
+        assert!(matches("/admin*", "/admin-users/ping"));
+        assert!(!matches("/admin*", "/adm"));
+
+        assert!(matches("*", "/anything"));
+        assert!(matches("/a/*/c", "/a/b/c"));
+        assert!(!matches("/a/*/c", "/a/b/d"));
+        assert!(matches("*.json", "/x/y.json"));
+        assert!(!matches("/a*a", "/a"));
     }
 }

@@ -1,6 +1,3 @@
-#![feature(try_trait_v2)]
-#![feature(duration_constructors)]
-
 use std::{collections::HashMap, process};
 use app::App;
 use crate::{app::{config::CONFIG, modules::load_modules}, context::session::init_session_store, db::connection::{init_database_connections_store, DatabaseConnections}, utils::log::{log_error, log_info}};
@@ -40,7 +37,7 @@ pub fn main () {
 
                 match database.connect(db_conf) {
                     Err(error) => {
-                        println!("failed to create connection: {}", error);
+                        log_error(&format!("db.{db_conf_name}: failed to connect: {error}"));
                     }
                     Ok(conn) => {
                         db_connections.register(db_conf_name.to_owned(), conn);
@@ -61,7 +58,7 @@ pub fn main () {
             if let Some(store_impl) = store.new_impl(&session_cfg.store_arg) {
                 init_session_store(store_impl);
             } else {
-                log_error("Failed to initialize session store");
+                log_error(&format!("Failed to initialize session store `{}:{}` (not connected)", &session_cfg.store, &session_cfg.store_arg));
                 process::exit(-1);
             }
         } else {
@@ -74,6 +71,12 @@ pub fn main () {
     for module in &app.modules {
         module.provide_models();
         module.provide_routes(&mut app.router);
+        module.provide_middlewares(&mut app.router);
+    }
+
+    if !db::check::check_models(&app.modules) {
+        log_error("Models strict check failed");
+        process::exit(-1);
     }
 
     // stage 3

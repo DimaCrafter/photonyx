@@ -1,0 +1,13 @@
+[package]
+name = "photonyx-sql-shared"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bindings.workspace = true
+photonyx-models = { workspace = true, features = ["ir"] }
+json.workspace = true
+sha2 = "0.10.9"
+
+[dev-dependencies]
+photonyx-models = { workspace = true, features = ["parse"] }

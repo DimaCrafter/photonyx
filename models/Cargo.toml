@@ -1,0 +1,16 @@
+[package]
+name = "photonyx-models"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["parse"]
+# Model IR: types, check, emit, snapshot, to_runtime
+ir = []
+# Reading .yml models into IR
+parse = ["ir", "dep:saphyr"]
+
+[dependencies]
+json.workspace = true
+saphyr = { version = "0.2.2", optional = true }
+sha2 = "0.10.9"

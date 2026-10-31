@@ -6,7 +6,6 @@ use crate::app::config::CONFIG;
 use crate::http::cors::Cors;
 use crate::utils::log::*;
 use super::App;
-use crate::context::http::HttpContext;
 use crate::context::ws::SocketContext;
 use crate::http::{entity::*, codes::HttpCode};
 use crate::http1::{Http1Engine, Http1Connection};
@@ -66,16 +65,8 @@ fn proceed_http<Connection: HttpConnection> (app: &App, mut connection: Connecti
     if let HttpMethod::OPTIONS = req.method {
         res = Response::from_status(HttpCode::OK);
         cors.apply_preflight(&mut res);
-    } else if let Some((endpoint, params)) = app.router.match_action(&req.path) {
-        let mut ctx = HttpContext::from(&connection, req, params);
-        match (endpoint.call)(&mut ctx) {
-            ResponseRet::Replace(response) => {
-                res = response;
-            },
-            _ => {
-                res = ctx.res;
-            }
-        }
+    } else if let Some(response) = app.router.call_action(&connection, req) {
+        res = response;
         cors.apply_normal(&mut res);
     } else {
         res = Response::from_code(HttpCode::NotFound, "API endpoint not found");

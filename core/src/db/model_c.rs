@@ -1,55 +1,48 @@
-use bindings::{c::Slice, db::{ModelMetaImpl, ModelFieldMeta, ModelFieldConstraint, LinkPolicy, EntitySetAnyField}, camel_to_kebab};
-use crate::c::{c_str, c_string};
+use std::ptr::null_mut;
+use bindings::db::{EntityDeinitFn, EntityInitFn, EntitySetAnyField, ModelMeta};
+use crate::{app::config::CONFIG, c::{c_slice, c_str, c_string}, db::{connection::DB_CONNECTIONS, model::current_attach_context}, utils::log::{log_error, log_info}};
 
 
 #[no_mangle]
-pub unsafe extern "C" fn model_meta_add_field (
-	model: &mut Box<dyn ModelMetaImpl>,
-	name: c_str,
-	setter: EntitySetAnyField
-) -> *mut ModelFieldMeta {
-	return &mut model.add_field(c_string(name), setter).meta;
-}
+pub unsafe extern "C" fn model_attach (
+	db: c_str,
+	model: c_str,
+	init: EntityInitFn,
+	deinit: EntityDeinitFn,
+	setters: *const EntitySetAnyField,
+	setters_len: usize
+) -> *mut ModelMeta {
+	let db = c_string(db);
+	let model = c_string(model);
+	let setters = c_slice(setters, setters_len);
 
-#[no_mangle]
-pub extern "C" fn model_meta_add_unique_key (model: &mut Box<dyn ModelMetaImpl>, compound: &Slice<Slice<u8>>) {
-	model.add_unique_key(compound);
-}
+	let result = current_attach_context(|context| {
+		let context = context.ok_or_else(|| format!("model {db}.{model}: model_attach must be called from provide_models"))?;
+		let module = &context.module;
 
-#[no_mangle]
-pub extern "C" fn model_field_meta_add_length (field_meta: &mut ModelFieldMeta, value: u32) {
-	field_meta.constraints.push(ModelFieldConstraint::Length { value });
-}
+		let models = context.models.as_ref().ok_or_else(|| format!("{module}: model {db}.{model} attached, but the module does not export models_schema"))?;
+		let meta = ModelMeta::from_runtime(models, &db, &model, init, deinit, setters).map_err(|error| format!("{module}: {error}"))?;
 
-#[no_mangle]
-pub extern "C" fn model_field_meta_add_primary_key (field_meta: &mut ModelFieldMeta) {
-	field_meta.constraints.push(ModelFieldConstraint::PrimaryKey);
-}
+		let has_connection = DB_CONNECTIONS.get().is_some_and(|store| store.find(&db).is_some());
+		if !has_connection {
+			let reason = if CONFIG["db"][db.as_str()].is_object() {
+				"failed to connect to it at start (see above)"
+			} else {
+				"it is not configured in `db` of the config"
+			};
 
-#[no_mangle]
-pub unsafe extern "C" fn model_field_meta_add_link (
-	field_meta: &mut ModelFieldMeta,
-	dst_collection: c_str,
-	dst_column: c_str,
-	delete: LinkPolicy,
-	update: LinkPolicy
-) {
-	field_meta.constraints.push(ModelFieldConstraint::Link {
-		dst_table: get_table_name(&c_string(dst_collection)),
-		dst_column: c_string(dst_column),
-		delete,
-		update
+			return Err(format!("{module}: model {db}.{model} is bound to database '{db}', but {reason}"));
+		}
+
+		log_info(&format!("{module}: attached model {db}.{model} (table {}, {} columns)", &meta.table, meta.fields.len()));
+		return Ok(meta);
 	});
-}
 
-// TODO: DRY
-pub fn get_table_name (collection: &str) -> String {
-	let mut table_name = camel_to_kebab(collection);
-	if table_name.ends_with('s') {
-		table_name.push_str("es");
-	} else {
-		table_name.push_str("s");
+	match result {
+		Ok(meta) => return Box::into_raw(Box::new(meta)),
+		Err(error) => {
+			log_error(&error);
+			return null_mut();
+		}
 	}
-
-	return table_name;
 }

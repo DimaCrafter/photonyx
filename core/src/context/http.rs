@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ffi::c_void, net::IpAddr, ptr::null_mut};
 use json::{object, JsonValue};
-use crate::{app::config::CONFIG, context::session::Session, http::{codes::HttpCode, entity::{HttpConnection, HttpHeaders, Request, Response, ResponseRet, ResponseType}}, utils::log::log_warning};
+use crate::{app::config::CONFIG, context::session::Session, http::{codes::HttpCode, entity::{HttpConnection, HttpHeaders, Request, Response, ResponseExit, ResponseRet, ResponseType}}, utils::log::log_warning};
 use crate::utils::validator::*;
 
 
@@ -41,7 +41,7 @@ impl HttpContext {
 			if let Some(session_header) = self.get_header("session") {
 				// In case that session token is invalid or expired it's better to serve
 				// the client with a new session rather than just throwing an error.
-				self.session = Session::decode(&session_header).or_else(|| Some(Session::new()));
+				self.session = Some(Session::decode(&session_header));
 			} else {
 				self.session = Some(Session::new());
 			}
@@ -75,7 +75,7 @@ impl HttpContext {
 		};
 
 		match validate_json::<T>(body_str) {
-			Ok(payload) => ResponseRet::Result(payload),
+			Ok(payload) => Ok(payload),
 			Err(error) => self.json_status(
 				object! { "type": "ValidationError", "message": error.message, "path": error.path },
 				HttpCode::BadRequest
@@ -94,7 +94,7 @@ impl HttpContext {
 		self.res.headers.set_default("content-type".to_owned(), "application/json".to_owned());
 		self.res.payload = ResponseType::Payload(data.dump().into());
 
-		return ResponseRet::Return;
+		return Err(ResponseExit::Return);
 	}
 
 	#[inline]
@@ -108,7 +108,7 @@ impl HttpContext {
 		self.res.headers.set_default("content-type".to_owned(), "text/plain".to_owned());
 		self.res.payload = ResponseType::Payload(message.into());
 
-		return ResponseRet::Return;
+		return Err(ResponseExit::Return);
 	}
 
 	pub fn redirect (&mut self, target: &str) -> ResponseRet {
@@ -116,16 +116,17 @@ impl HttpContext {
 		self.res.headers.set("location".to_string(), target.to_string());
 		self.res.payload = ResponseType::NoContent;
 
-		return ResponseRet::Return;
+		return Err(ResponseExit::Return);
 	}
 
 	#[inline]
 	pub fn drop (self) -> ResponseRet {
-		return ResponseRet::Replace(Response::drop());
+		return Err(ResponseExit::Replace(Response::drop()));
 	}
 
 	pub fn finalize (mut self) -> Response {
-		if let Some(session) = &self.session {
+		if let Some(mut session) = self.session.take() {
+			session.commit();
 			if session.need_header_refresh {
 				self.set_header("session", session.crypt());
 			}

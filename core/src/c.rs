@@ -72,3 +72,11 @@ pub unsafe fn c_string (ptr: c_str) -> String {
 	let raw = &*slice_from_raw_parts(ptr as *const u8, c_strlen(ptr));
 	return String::from_utf8_lossy(raw).into_owned();
 }
+
+pub unsafe fn c_slice<'a, T> (ptr: *const T, length: usize) -> &'a [T] {
+    if length == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts(ptr, length)
+    }
+}

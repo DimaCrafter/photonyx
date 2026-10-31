@@ -1,7 +1,6 @@
 use core::slice;
 use std::io::Error;
 use std::net::{SocketAddr, IpAddr, TcpStream};
-use std::ops::{ControlFlow, FromResidual, Try};
 use std::str::FromStr;
 use bufstream::BufStream;
 use crate::http::codes::HttpCode;
@@ -78,7 +77,7 @@ impl HttpHeaders {
 
     pub fn get (&self, name: &str) -> Option<&str> {
         for header in self {
-            if header.name == name {
+            if header.name.eq_ignore_ascii_case(name) {
                 return Some(&header.value)
             }
         }
@@ -125,42 +124,14 @@ pub struct Response {
     pub payload: ResponseType
 }
 
-pub enum ResponseRet<T = ()> {
-    /// Like `Ok(T)`, used to return result
-    Result(T),
-    /// Like `Err(_)`, used to exit handler
+pub enum ResponseExit {
+    /// Used to exit handler
     Return,
-    /// Like `Err(Response)`, used to set or replace current response and exit handler
+    /// Used to set or replace current response and exit handler
     Replace(Response)
 }
 
-impl<T> Try for ResponseRet<T> where ResponseRet<T>: FromResidual<ResponseRet<T>> {
-    type Output = T;
-    type Residual = ResponseRet<T>;
-    fn branch (self) -> ControlFlow<Self::Residual, Self::Output> {
-        return match self {
-            ResponseRet::Result(value) => ControlFlow::Continue(value),
-            ResponseRet::Return => ControlFlow::Break(self),
-            ResponseRet::Replace(_) => ControlFlow::Break(self),
-        }
-    }
-
-    fn from_output (value: Self::Output) -> Self {
-        return ResponseRet::Result(value);
-    }
-}
-
-// Any residuals can be safely re-casted, because `Result` will never stored it a residual
-impl<A, B> FromResidual<ResponseRet<B>> for ResponseRet<A> {
-    fn from_residual (value: ResponseRet<B>) -> Self {
-        return match value {
-            ResponseRet::Result(_) => unreachable!(),
-            ResponseRet::Return => ResponseRet::Return,
-            ResponseRet::Replace(res) => ResponseRet::Replace(res),
-        }
-    }
-}
-
+pub type ResponseRet<T = ()> = Result<T, ResponseExit>;
 
 impl Response {
     pub const fn empty () -> Self {

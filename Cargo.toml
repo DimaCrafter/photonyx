@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "core",
+    "bindings",
+    "macro",
+    "models",
+    "sql-shared",
+    "onyx",
+]
+
+default-members = [
+    "core",
+    "bindings",
+    "macro",
+    "models",
+    "sql-shared",
+    "onyx",
+]
+
+[workspace.dependencies]
+bindings = { path = "bindings" }
+photonyx_macro = { path = "macro" }
+photonyx-models = { path = "models", default-features = false }
+photonyx-sql-shared = { path = "sql-shared" }
+
+json = "0.12.4"
+chrono = "0.4.42"
+libloading = "0.8.8"

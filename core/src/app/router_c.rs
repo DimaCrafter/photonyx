@@ -1,4 +1,4 @@
-use crate::{app::router::{MiddlewareResult, Router}, c::{c_str, c_string, c_unwrap}, context::http::HttpContext, http::entity::{Response, ResponseRet}};
+use crate::{app::router::{MiddlewareResult, Router}, c::{c_str, c_string, c_unwrap}, context::http::HttpContext, http::entity::{Response, ResponseExit}};
 
 
 #[no_mangle]
@@ -6,9 +6,9 @@ pub unsafe extern "C" fn router_register (router: &mut Router, pattern: c_str, a
 	router.register(c_string(pattern), move |ctx| {
 		let res = (action)(ctx);
 		if res.is_null() {
-			return ResponseRet::Return;
+			return Err(ResponseExit::Return);
 		} else {
-			return ResponseRet::Replace(c_unwrap(res));
+			return Err(ResponseExit::Replace(c_unwrap(res)));
 		}
 	});
 }

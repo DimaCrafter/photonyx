@@ -11,13 +11,14 @@ bufstream = "0.1.4"
 byteorder = "1.4.3"
 base64 = "0.13.0"
 sha1 = "0.10.1"
-json = "0.12.4"
+json.workspace = true
 tungstenite = "0.17.3"
-libloading = "0.8.8"
-photonyx_macro = { path = "../macro" }
-bindings = { path = "../bindings" }
+libloading.workspace = true
+photonyx_macro.workspace = true
+bindings.workspace = true
+photonyx-models.workspace = true
 ouroboros = "0.18.5"
 hmac = "0.12.1"
 sha2 = "0.10.9"
-chrono = "0.4.42"
+chrono.workspace = true
 email_syntax_verify_opt = "0.1.0"
