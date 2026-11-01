@@ -1,12 +1,33 @@
 use std::ffi::c_void;
 
 use bindings::c::Slice;
-use crate::{c::c_unwrap, context::{http::HttpContext, session::Session}, http::entity::{Request, Response}};
+use crate::{c::{c_slice, c_unwrap}, context::{http::HttpContext, session::Session}, http::entity::{HttpMethod, Request, Response}};
 
 
 #[no_mangle]
 pub extern "C" fn http_context_get_body_ref (ctx: &HttpContext) -> Slice<u8> {
 	return Slice::for_vec(&ctx.req.body);
+}
+
+/// Text form of the peer address, valid until the handler returns
+#[no_mangle]
+pub extern "C" fn http_context_get_address (ctx: &mut HttpContext) -> Slice<u8> {
+	return ctx.get_address_text().into();
+}
+
+#[no_mangle]
+pub extern "C" fn http_context_get_method (ctx: &HttpContext) -> HttpMethod {
+	return ctx.req.method;
+}
+
+#[no_mangle]
+pub extern "C" fn http_context_stream_begin (ctx: &mut HttpContext) -> bool {
+	return ctx.stream_begin();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn http_context_stream_write (ctx: &mut HttpContext, ptr: *const u8, size: usize) -> bool {
+	return ctx.stream_write(c_slice(ptr, size));
 }
 
 #[no_mangle]

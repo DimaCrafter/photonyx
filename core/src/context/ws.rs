@@ -5,13 +5,13 @@ use crate::http::entity::{Request, HttpConnection};
 use super::http::HttpContext;
 
 pub struct SocketContext {
-	pub http: HttpContext,
+	pub http: HttpContext<'static>,
 	pub stream: WebSocket<BufStream<TcpStream>>
 }
 
 impl SocketContext {
 	pub fn from<Connection: HttpConnection> (connection: Connection, req: Request) -> Self {
-		let http = HttpContext::from(&connection, req, HashMap::new());
+		let http = HttpContext::from(connection.get_address(), req, HashMap::new(), None);
 		let stream = connection.into_stream();
 		let ws_stream = WebSocket::from_raw_socket(stream, Role::Server, None);
 

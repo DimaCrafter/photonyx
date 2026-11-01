@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::{context::http::HttpContext, http::{codes::HttpCode, entity::{HttpConnection, Request, Response, ResponseExit, ResponseRet}}, utils::log::log_info};
+use crate::{context::http::{HttpContext, ResponseTarget}, http::{codes::HttpCode, cors::Cors, entity::{HttpConnection, Request, Response, ResponseExit, ResponseRet}}, utils::log::log_info};
 
 type ActionFn = dyn Fn(&mut HttpContext) -> ResponseRet + Sync + Send + 'static;
 type MiddlewareFn = dyn Fn(&mut HttpContext) -> MiddlewareResult + Sync + Send + 'static;
@@ -84,13 +84,14 @@ impl Router {
         return None;
     }
 
-    pub fn call_action<Connection: HttpConnection> (&self, connection: &Connection, req: Request) -> Option<Response> {
+    pub fn call_action<Connection: HttpConnection> (&self, connection: &mut Connection, req: Request, cors: &Cors) -> Option<Response> {
         let (endpoint, params) = match self.match_action(&req.path) {
             Some(pair) => pair,
             None => return None
         };
 
-        let mut ctx = HttpContext::from(connection, req, params);
+        let address = connection.get_address();
+        let mut ctx = HttpContext::from(address, req, params, Some(ResponseTarget { sink: connection, cors }));
         for (pattern, middleware) in &self.middlewares {
             if pattern.exec(&ctx.req.path) {
                 match middleware(&mut ctx) {
@@ -117,7 +118,11 @@ impl Router {
 
         match (endpoint.call)(&mut ctx) {
             Err(ResponseExit::Replace(response)) => {
-                ctx.res = response;
+                // The client has already received the status of a started stream
+                if !ctx.is_streaming() {
+                    ctx.res = response;
+                }
+
                 return Some(ctx.finalize());
             },
             _ => {

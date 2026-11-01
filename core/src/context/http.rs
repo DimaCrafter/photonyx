@@ -1,22 +1,36 @@
-use std::{collections::HashMap, ffi::c_void, net::IpAddr, ptr::null_mut};
+use std::{collections::HashMap, ffi::c_void, fmt, net::IpAddr, ptr::null_mut};
 use json::{object, JsonValue};
-use crate::{app::config::CONFIG, context::session::Session, http::{codes::HttpCode, entity::{HttpConnection, HttpHeaders, Request, Response, ResponseExit, ResponseRet, ResponseType}}, utils::log::log_warning};
+use crate::{app::config::CONFIG, context::session::Session, http::{codes::HttpCode, cors::Cors, entity::{HttpHeaders, Request, Response, ResponseExit, ResponseRet, ResponseSink, ResponseType}}, utils::log::log_warning};
 use crate::utils::validator::*;
 
 
+pub struct ResponseTarget<'a> {
+	pub sink: &'a mut dyn ResponseSink,
+	pub cors: &'a Cors
+}
+
+impl fmt::Debug for ResponseTarget<'_> {
+	fn fmt (&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		return f.write_str("ResponseTarget");
+	}
+}
+
 #[derive(Debug)]
-pub struct HttpContext {
+pub struct HttpContext<'a> {
 	pub(crate) _meta_ptr: *mut c_void,
 
 	pub req: Request,
 	pub res: Response,
 	pub params: HashMap<String, String>,
 	pub address: IpAddr,
-	session: Option<Session>
+	address_text: Option<String>,
+	session: Option<Session>,
+	target: Option<ResponseTarget<'a>>,
+	streaming: bool
 }
 
-impl HttpContext {
-	pub fn from<Connection: HttpConnection> (connection: &Connection, req: Request, params: HashMap<String, String>) -> Self {
+impl<'a> HttpContext<'a> {
+	pub fn from (address: IpAddr, req: Request, params: HashMap<String, String>, target: Option<ResponseTarget<'a>>) -> Self {
 		HttpContext {
 			req,
 			res: Response {
@@ -25,10 +39,17 @@ impl HttpContext {
 				payload: ResponseType::NoContent
 			},
 			params,
-			address: connection.get_address(),
+			address,
+			address_text: None,
 			session: None,
+			target,
+			streaming: false,
 			_meta_ptr: null_mut()
 		}
+	}
+
+	pub fn get_address_text (&mut self) -> &str {
+		return self.address_text.get_or_insert_with(|| self.address.to_string());
 	}
 
 	pub fn get_session (&mut self) -> &mut Session {
@@ -56,7 +77,7 @@ impl HttpContext {
 	}
 
 	#[inline]
-	pub fn get_header_default<'a> (&'a self, name: &str, default: &'a str) -> &'a str {
+	pub fn get_header_default<'s> (&'s self, name: &str, default: &'s str) -> &'s str {
 		return self.get_header(name).unwrap_or(default);
 	}
 
@@ -124,12 +145,66 @@ impl HttpContext {
 		return Err(ResponseExit::Replace(Response::drop()));
 	}
 
+	#[inline]
+	pub fn is_streaming (&self) -> bool {
+		return self.streaming;
+	}
+
+	/// Returns `false` when the client is gone or the context has no connection
+	pub fn stream_begin (&mut self) -> bool {
+		if self.streaming {
+			return true;
+		}
+
+		if self.target.is_none() {
+			return false;
+		}
+
+		self.commit_session();
+
+		if matches!(self.res.code, HttpCode::NotSent) {
+			self.res.code = HttpCode::OK;
+		}
+
+		self.streaming = true;
+
+		let target = self.target.as_mut().unwrap();
+		target.cors.apply_normal(&mut self.res);
+		return target.sink.begin_stream(&self.res).is_ok();
+	}
+
+	/// Returns `false` when the client is gone
+	pub fn stream_write (&mut self, chunk: &[u8]) -> bool {
+		if !self.stream_begin() {
+			return false;
+		}
+
+		return self.target.as_mut().unwrap().sink.write_stream(chunk).is_ok();
+	}
+
+	fn commit_session (&mut self) {
+		let Some(session) = self.session.as_mut() else {
+			return;
+		};
+
+		session.commit();
+
+		if session.need_header_refresh {
+			session.need_header_refresh = false;
+			let token = session.crypt();
+			self.set_header("session", token);
+		}
+	}
+
 	pub fn finalize (mut self) -> Response {
-		if let Some(mut session) = self.session.take() {
-			session.commit();
-			if session.need_header_refresh {
-				self.set_header("session", session.crypt());
+		self.commit_session();
+
+		if self.streaming {
+			if let Some(target) = self.target.as_mut() {
+				let _ = target.sink.finish_stream();
 			}
+
+			self.res.payload = ResponseType::Streamed;
 		}
 
 		return self.res;

@@ -1,5 +1,7 @@
 use std::io::Error;
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::thread;
+use std::time::Duration;
 use threadpool::ThreadPool;
 
 use crate::app::config::CONFIG;
@@ -21,8 +23,13 @@ pub fn start_server (app: &'static App) {
 			log_success(&format!("Listening on {}", bind_address));
 
 			loop {
-				let socket = listener.accept().unwrap();
-				pool.execute(move || proceed_connection::<Http1Engine, Http1Connection>(app, socket));
+				match listener.accept() {
+					Ok(socket) => pool.execute(move || proceed_connection::<Http1Engine, Http1Connection>(app, socket)),
+					Err(error) => {
+						log_warning(&format!("Failed to accept connection: {error}"));
+						thread::sleep(Duration::from_millis(100));
+					}
+				}
 			}
 		}
 		Err(error) => {
@@ -65,7 +72,7 @@ fn proceed_http<Connection: HttpConnection> (app: &App, mut connection: Connecti
     if let HttpMethod::OPTIONS = req.method {
         res = Response::from_status(HttpCode::OK);
         cors.apply_preflight(&mut res);
-    } else if let Some(response) = app.router.call_action(&connection, req) {
+    } else if let Some(response) = app.router.call_action(&mut connection, req, &cors) {
         res = response;
         cors.apply_normal(&mut res);
     } else {

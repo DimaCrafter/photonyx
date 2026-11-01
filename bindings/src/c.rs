@@ -10,6 +10,13 @@ pub struct Slice<T> {
 }
 
 impl<T> Slice<T> {
+    pub const fn null () -> Slice<T> {
+        Slice {
+            ptr: std::ptr::null(),
+            len: 0
+        }
+    }
+
     pub fn for_vec (value: &Vec<T>) -> Slice<T> {
         Slice {
             ptr: value.as_ptr(),

@@ -5,7 +5,8 @@ use std::str::FromStr;
 use bufstream::BufStream;
 use crate::http::codes::HttpCode;
 
-#[derive(Debug)]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -95,7 +96,13 @@ impl<'a> IntoIterator for &'a HttpHeaders {
     }
 }
 
-pub trait HttpConnection: Sized + Send + Sync {
+pub trait ResponseSink {
+    fn begin_stream (&mut self, head: &Response) -> Result<(), Error>;
+    fn write_stream (&mut self, chunk: &[u8]) -> Result<(), Error>;
+    fn finish_stream (&mut self) -> Result<(), Error>;
+}
+
+pub trait HttpConnection: ResponseSink + Sized + Send + Sync {
     fn get_address (&self) -> IpAddr;
     fn into_stream (self) -> BufStream<TcpStream>;
 
@@ -202,5 +209,7 @@ pub enum ResponseType {
     NoContent,
     Payload(Vec<u8>),
     Upgrade,
+    /// Already sent through `ResponseSink`
+    Streamed,
     Drop
 }

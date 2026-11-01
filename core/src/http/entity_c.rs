@@ -1,8 +1,6 @@
-use std::ptr::null;
-
 use bindings::c::Slice;
 
-use crate::{c::{c_deinit, c_init, c_str, c_string}, http::{codes::HttpCode, entity::{HttpHeaders, Request, Response, ResponseType}}};
+use crate::{c::{c_deinit, c_init, c_slice, c_str, c_string}, http::{codes::HttpCode, entity::{HttpHeaders, Request, Response, ResponseType}}};
 
 
 #[no_mangle]
@@ -35,6 +33,12 @@ pub unsafe extern "C" fn response_set_payload (res: &mut Response, r_ptr: *mut u
 	res.payload = ResponseType::Payload(Vec::from_raw_parts(r_ptr, size, size));
 }
 
+/// Unlike `response_set_payload`, leaves `ptr` with the caller
+#[no_mangle]
+pub unsafe extern "C" fn response_set_payload_copy (res: &mut Response, ptr: *const u8, size: usize) {
+	res.payload = ResponseType::Payload(c_slice(ptr, size).to_vec());
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn response_drop (res: *mut Response) {
 	c_deinit(res)
@@ -42,12 +46,11 @@ pub unsafe extern "C" fn response_drop (res: *mut Response) {
 // todo: replace c_str with Slice<u8> to prevent useless slice -> c_str -> slice converting
 
 #[no_mangle]
-pub unsafe extern "C" fn http_headers_get (headers: &HttpHeaders, name: &Slice<u8>) -> *const Slice<u8> {
-	if let Some(value) = headers.get(name.as_str_unchecked()) {
-		return c_init(|| value.into());
-	} else {
-		return null();
-	}
+pub unsafe extern "C" fn http_headers_get (headers: &HttpHeaders, name: Slice<u8>) -> Slice<u8> {
+	return match headers.get(name.as_str_unchecked()) {
+		Some(value) => value.into(),
+		None => Slice::null()
+	};
 }
 
 #[no_mangle]
