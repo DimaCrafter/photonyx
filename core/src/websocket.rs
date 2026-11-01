@@ -1,3 +1,4 @@
+use base64::{prelude::BASE64_STANDARD, Engine};
 use sha1::{Sha1, Digest};
 use tungstenite::{Message, Error};
 use crate::{http::{entity::{Response, HttpHeaders, ResponseType, Request}, codes::HttpCode}, app::App, context::ws::SocketContext};
@@ -48,7 +49,7 @@ pub fn websocket_handshake (app: &App, req: &Request) -> HandshakeResult {
 
     if let Some(client_key) = req.headers.get("sec-websocket-key") {
         let hash: &[u8] = &Sha1::digest(format!("{}258EAFA5-E914-47DA-95CA-C5AB0DC85B11", client_key))[..];
-        res_headers.set("sec-websocket-accept".to_string(), base64::encode(hash));
+        res_headers.set("sec-websocket-accept".to_string(), BASE64_STANDARD.encode(hash));
     } else {
         return HandshakeResult::err(HttpCode::BadRequest, "WebSocket accept header not provided");
     }
@@ -58,7 +59,7 @@ pub fn websocket_handshake (app: &App, req: &Request) -> HandshakeResult {
 
 pub fn maintain_websocket (app: &App, mut ctx: SocketContext, endpoint_index: usize) -> Result<(), ()> {
     loop {
-        match ctx.stream.read_message() {
+        match ctx.stream.read() {
             Ok(msg) => {
                 dispatch_websocket_message(app, &mut ctx, msg, endpoint_index);
             },

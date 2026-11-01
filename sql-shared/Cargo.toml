@@ -7,7 +7,7 @@ edition = "2021"
 bindings.workspace = true
 photonyx-models = { workspace = true, features = ["ir"] }
 json.workspace = true
-sha2 = "0.10.9"
+sha2 = "0.11.1"
 
 [dev-dependencies]
 photonyx-models = { workspace = true, features = ["parse"] }

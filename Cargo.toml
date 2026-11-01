@@ -26,4 +26,4 @@ photonyx-sql-shared = { path = "sql-shared" }
 
 json = "0.12.4"
 chrono = "0.4.42"
-libloading = "0.8.8"
+libloading = "0.9.0"

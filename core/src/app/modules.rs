@@ -54,7 +54,7 @@ pub struct Module {
 
 impl Module {
 	pub fn load<P: AsRef<OsStr>> (name: &str, path: P) -> Result<Self, String> {
-		let lib = unsafe { Library::new(path) }.map_err(|error| error.to_string())?;
+		let lib = unsafe { Library::new(path.as_ref()) }.map_err(|error| error.to_string())?;
 		let models = read_models_schema(&lib)?.map(Arc::new);
 
 		let builder = ModuleBuilder {

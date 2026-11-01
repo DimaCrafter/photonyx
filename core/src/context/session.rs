@@ -1,4 +1,6 @@
+use hmac::KeyInit;
 use std::{ops::{Index, IndexMut}, sync::OnceLock, time::{SystemTime, UNIX_EPOCH}};
+use base64::{prelude::BASE64_STANDARD, Engine};
 use bindings::session::SessionStoreImpl;
 use hmac::{Hmac, Mac};
 use json::{object, JsonValue};
@@ -134,7 +136,7 @@ fn verify_token (token_str: &str) -> Option<u64> {
 	let mut token = json::parse(token_str).ok()?;
 
 	let sign = token.remove("sign");
-	let sign_raw = base64::decode(sign.as_str()?.as_bytes()).ok()?;
+	let sign_raw = BASE64_STANDARD.decode(sign.as_str()?.as_bytes()).ok()?;
 
 	if !verify_session_token(&token, &sign_raw) {
 		return None;
@@ -176,7 +178,7 @@ pub fn sign_session_token (token: &JsonValue) -> String {
 	hash.update(token.dump().as_bytes());
 
 	let sign_raw = hash.finalize().into_bytes();
-	return base64::encode(sign_raw);
+	return BASE64_STANDARD.encode(sign_raw);
 }
 
 pub fn verify_session_token (token_with_no_sign: &JsonValue, sign: &[u8]) -> bool {

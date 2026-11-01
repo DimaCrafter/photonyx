@@ -26,6 +26,6 @@ impl SocketContext {
 		payload += "\"]";
 
 		// todo: report write error?
-		let _ = self.stream.write_message(tungstenite::Message::text(payload));
+		let _ = self.stream.send(tungstenite::Message::text(payload));
 	}
 }
