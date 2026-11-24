@@ -88,7 +88,7 @@ fn default_literal (field: &Field) -> Option<String> {
 		Default::Int(value) => Some(value.to_string()),
 		Default::Float(value) => Some(format!("{value:?}")),
 		Default::Bool(value) => Some(value.to_string()),
-		Default::Now => Some("m.CURRENT_DATE".to_owned()),
+		Default::Now => Some("m.current_date".to_owned()),
 		// DateTime literals can not be a Zig default value
 		Default::Str(_) if field.field_type == FieldType::DateTime => None,
 		Default::Str(value) => Some(string_literal(value))
