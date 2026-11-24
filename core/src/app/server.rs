@@ -15,7 +15,7 @@ use crate::websocket::{websocket_handshake, HandshakeResult, maintain_websocket}
 
 
 pub fn start_server (app: &'static App) {
-    let bind_address = format!("{}:{}", CONFIG.host, CONFIG.port);
+    let bind_address = format!("{}:{}", CONFIG.http.host, CONFIG.http.port);
 
 	match TcpListener::bind(&bind_address) {
         Ok(listener) => {

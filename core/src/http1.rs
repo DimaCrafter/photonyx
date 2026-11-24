@@ -1,8 +1,8 @@
 use std::io::{BufRead, Error, ErrorKind, Read, Write};
 use std::net::{SocketAddr, IpAddr, TcpStream, Shutdown};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use bufstream::BufStream;
-use crate::app::config::{ServerConfig, CONFIG};
+use crate::app::config::{HttpConfig, CONFIG};
 use crate::http::codes::HttpCode;
 use crate::http::entity::{HttpConnection, HttpEngine, HttpMethod, ParsingResult, Request, Response, ResponseSink, ResponseType};
 
@@ -11,7 +11,30 @@ pub struct Http1Engine;
 
 impl HttpEngine<Http1Connection> for Http1Engine {
     fn handle_connection (socket: (TcpStream, SocketAddr)) -> Http1Connection {
-        Http1Connection::new(socket, CONFIG.server)
+        Http1Connection::new(socket, Http1Limits::from(&CONFIG.http))
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Http1Limits {
+    /// Limit for the request line and headers, bytes
+    pub max_header_size: usize,
+    /// Limit for the request body, bytes
+    pub max_body_size: usize,
+    /// Time to receive the whole request
+    pub read_timeout: Duration,
+    /// Time for a single write to the client
+    pub write_timeout: Duration
+}
+
+impl From<&HttpConfig> for Http1Limits {
+    fn from (config: &HttpConfig) -> Self {
+        Http1Limits {
+            max_header_size: config.max_header_size,
+            max_body_size: config.max_body_size,
+            read_timeout: config.read_timeout,
+            write_timeout: config.write_timeout
+        }
     }
 }
 
@@ -19,11 +42,11 @@ pub struct Http1Connection {
     stream: BufStream<TcpStream>,
     address: IpAddr,
     version_minor: char,
-    limits: ServerConfig
+    limits: Http1Limits
 }
 
 impl Http1Connection {
-    pub fn new (socket: (TcpStream, SocketAddr), limits: ServerConfig) -> Self {
+    pub fn new (socket: (TcpStream, SocketAddr), limits: Http1Limits) -> Self {
         let _ = socket.0.set_write_timeout(Some(limits.write_timeout));
 
         Http1Connection {
@@ -269,11 +292,10 @@ impl HttpConnection for Http1Connection {
 mod tests {
     use std::{io::{Read, Write}, net::{TcpListener, TcpStream}, thread, time::{Duration, Instant}};
     use crate::http::{codes::HttpCode, entity::{HttpConnection, HttpHeaders, ParsingResult, Response, ResponseSink, ResponseType}};
-    use crate::app::config::ServerConfig;
-    use super::Http1Connection;
+    use super::{Http1Connection, Http1Limits};
 
-    fn limits () -> ServerConfig {
-        return ServerConfig {
+    fn limits () -> Http1Limits {
+        return Http1Limits {
             max_header_size: 256,
             max_body_size: 1024,
             read_timeout: Duration::from_millis(200),

@@ -1,25 +1,25 @@
+use crate::http::codes::HttpCode;
+use bufstream::BufStream;
 use core::slice;
 use std::io::Error;
-use std::net::{SocketAddr, IpAddr, TcpStream};
+use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::str::FromStr;
-use bufstream::BufStream;
-use crate::http::codes::HttpCode;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 pub enum HttpMethod {
     GET,
     POST,
-    OPTIONS
+    OPTIONS,
 }
 
 impl HttpMethod {
-    pub fn from_str (method: &str) -> Option<HttpMethod> {
+    pub fn from_str(method: &str) -> Option<HttpMethod> {
         match method {
             "GET" => Some(HttpMethod::GET),
             "POST" => Some(HttpMethod::POST),
             "OPTIONS" => Some(HttpMethod::OPTIONS),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -27,31 +27,31 @@ impl HttpMethod {
 #[derive(Debug)]
 pub struct HttpHeader {
     pub name: String,
-    pub value: String
+    pub value: String,
 }
 
 #[derive(Debug)]
 pub struct HttpHeaders {
-    contents: Vec<HttpHeader>
+    contents: Vec<HttpHeader>,
 }
 
 impl HttpHeaders {
-    pub const fn empty () -> Self {
+    pub const fn empty() -> Self {
         HttpHeaders {
-            contents: Vec::new()
+            contents: Vec::new(),
         }
     }
 
-    pub fn from_type (content_type: &str) -> Self {
+    pub fn from_type(content_type: &str) -> Self {
         HttpHeaders::empty().with_type(content_type)
     }
 
-    pub fn with_type (mut self, content_type: &str) -> Self {
+    pub fn with_type(mut self, content_type: &str) -> Self {
         self.set_default("content-type".to_string(), content_type.to_string());
         return self;
     }
 
-    pub fn set (&mut self, name: String, value: String) {
+    pub fn set(&mut self, name: String, value: String) {
         if let Some(header) = self.contents.iter_mut().find(|h| h.name == name) {
             header.value = value.trim_start().to_string();
         } else {
@@ -59,31 +59,39 @@ impl HttpHeaders {
         }
     }
 
-    pub fn set_normal (&mut self, name: String, value: String) {
+    pub fn set_normal(&mut self, name: String, value: String) {
         self.set(name.to_ascii_lowercase(), value.trim_start().to_string());
     }
 
-    pub fn set_default (&mut self, name: String, value: String) {
+    pub fn set_default(&mut self, name: String, value: String) {
         if let None = self.contents.iter_mut().find(|h| h.name == name) {
             self.contents.push(HttpHeader { name, value });
         }
     }
 
-    pub fn remove (&mut self, name: String) {
+    pub fn remove(&mut self, name: String) {
         let lower_name = name.to_ascii_lowercase();
         if let Some(i) = self.contents.iter().position(|h| h.name == lower_name) {
             self.contents.remove(i);
         }
     }
 
-    pub fn get (&self, name: &str) -> Option<&str> {
+    pub fn get(&self, name: &str) -> Option<&str> {
         for header in self {
             if header.name.eq_ignore_ascii_case(name) {
-                return Some(&header.value)
+                return Some(&header.value);
             }
         }
 
         return None;
+    }
+
+    pub fn get_all<'s>(&'s self, name: &'s str) -> impl Iterator<Item = &'s str> + 's {
+        return self
+            .contents
+            .iter()
+            .filter(move |header| header.name.eq_ignore_ascii_case(name))
+            .map(|header| header.value.as_str());
     }
 }
 
@@ -91,85 +99,85 @@ impl<'a> IntoIterator for &'a HttpHeaders {
     type Item = &'a HttpHeader;
     type IntoIter = slice::Iter<'a, HttpHeader>;
 
-    fn into_iter (self) -> Self::IntoIter {
+    fn into_iter(self) -> Self::IntoIter {
         return self.contents.iter();
     }
 }
 
 pub trait ResponseSink {
-    fn begin_stream (&mut self, head: &Response) -> Result<(), Error>;
-    fn write_stream (&mut self, chunk: &[u8]) -> Result<(), Error>;
-    fn finish_stream (&mut self) -> Result<(), Error>;
+    fn begin_stream(&mut self, head: &Response) -> Result<(), Error>;
+    fn write_stream(&mut self, chunk: &[u8]) -> Result<(), Error>;
+    fn finish_stream(&mut self) -> Result<(), Error>;
 }
 
 pub trait HttpConnection: ResponseSink + Sized + Send + Sync {
-    fn get_address (&self) -> IpAddr;
-    fn into_stream (self) -> BufStream<TcpStream>;
+    fn get_address(&self) -> IpAddr;
+    fn into_stream(self) -> BufStream<TcpStream>;
 
-    fn parse (&mut self) -> ParsingResult;
-    fn respond (&mut self, res: Response) -> Result<(), Error>;
-    fn disconnect (self) -> Result<(), Error>;
+    fn parse(&mut self) -> ParsingResult;
+    fn respond(&mut self, res: Response) -> Result<(), Error>;
+    fn disconnect(self) -> Result<(), Error>;
 }
 
 pub type BoxedHttpConnection = Box<dyn HttpConnection + Send>;
 
 pub trait HttpEngine<Connection: HttpConnection> {
-    fn handle_connection (socket: (TcpStream, SocketAddr)) -> Connection;
+    fn handle_connection(socket: (TcpStream, SocketAddr)) -> Connection;
 }
 
 pub enum ParsingResult {
     Complete(Request),
     Partial,
     Error(HttpCode),
-    Invalid
+    Invalid,
 }
 
 #[derive(Debug)]
 pub struct Response {
     pub code: HttpCode,
     pub headers: HttpHeaders,
-    pub payload: ResponseType
+    pub payload: ResponseType,
 }
 
 pub enum ResponseExit {
     /// Used to exit handler
     Return,
     /// Used to set or replace current response and exit handler
-    Replace(Response)
+    Replace(Response),
 }
 
 pub type ResponseRet<T = ()> = Result<T, ResponseExit>;
 
 impl Response {
-    pub const fn empty () -> Self {
+    pub const fn empty() -> Self {
         Response {
             code: HttpCode::NotSent,
             headers: HttpHeaders::empty(),
-            payload: ResponseType::NoContent
+            payload: ResponseType::NoContent,
         }
     }
 
-    pub fn from_code (code: HttpCode, message: &str) -> Self {
+    pub fn from_code(code: HttpCode, message: &str) -> Self {
         Response {
             code,
             headers: HttpHeaders::from_type("text/plain"),
-            payload: ResponseType::Payload(message.as_bytes().to_vec())
+            payload: ResponseType::Payload(message.as_bytes().to_vec()),
         }
     }
 
-    pub fn from_status (code: HttpCode) -> Self {
+    pub fn from_status(code: HttpCode) -> Self {
         Response {
             code,
             headers: HttpHeaders::empty(),
-            payload: ResponseType::NoContent
+            payload: ResponseType::NoContent,
         }
     }
 
-    pub fn drop () -> Self {
+    pub fn drop() -> Self {
         Response {
             code: HttpCode::GatewayTimeout,
             headers: HttpHeaders::empty(),
-            payload: ResponseType::Drop
+            payload: ResponseType::Drop,
         }
     }
 }
@@ -180,14 +188,14 @@ pub struct Request {
     pub query: String,
     pub headers: HttpHeaders,
     pub method: HttpMethod,
-    pub body: Vec<u8>
+    pub body: Vec<u8>,
 }
 
 impl Request {
-    pub fn new (method: HttpMethod, url_path: String) -> Self {
+    pub fn new(method: HttpMethod, url_path: String) -> Self {
         let (path, query) = match url_path.split_once('?') {
             Some((path, query_string)) => (path.to_string(), query_string.to_string()),
-            None => (url_path, String::new())
+            None => (url_path, String::new()),
         };
 
         Self {
@@ -195,12 +203,15 @@ impl Request {
             query,
             method,
             headers: HttpHeaders::empty(),
-            body: Vec::new()
+            body: Vec::new(),
         }
     }
 
-    pub fn parse_content_length (&self) -> Option<usize> {
-        return self.headers.get("Content-Length").and_then(|len| usize::from_str(len).ok());
+    pub fn parse_content_length(&self) -> Option<usize> {
+        return self
+            .headers
+            .get("Content-Length")
+            .and_then(|len| usize::from_str(len).ok());
     }
 }
 
@@ -211,5 +222,5 @@ pub enum ResponseType {
     Upgrade,
     /// Already sent through `ResponseSink`
     Streamed,
-    Drop
+    Drop,
 }

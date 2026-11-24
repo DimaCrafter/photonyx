@@ -14,7 +14,7 @@ impl Cors {
 	}
 
 	fn apply_origin_check (&self, res: &mut Response) {
-		let (allow_origin, reflected) = resolve_origin(&CONFIG.cors.origin, self.origin.as_deref());
+		let (allow_origin, reflected) = resolve_origin(&CONFIG.http.cors.origin, self.origin.as_deref());
 		res.headers.set("Access-Control-Allow-Origin".to_string(), allow_origin);
 
 		if reflected {
@@ -23,20 +23,20 @@ impl Cors {
 	}
 
 	pub fn apply_normal (&self, res: &mut Response) {
-		res.headers.set("Access-Control-Expose-Headers".to_string(), CONFIG.cors.headers.clone());
+		res.headers.set("Access-Control-Expose-Headers".to_string(), CONFIG.http.cors.headers.clone());
 		self.apply_origin_check(res);
 	}
 
 	pub fn apply_preflight (&self, res: &mut Response) {
-		res.headers.set("Access-Control-Allow-Methods".to_string(), CONFIG.cors.methods.clone());
-		res.headers.set("Access-Control-Allow-Headers".to_string(), CONFIG.cors.headers.clone());
-		res.headers.set("Access-Control-Max-Age".to_string(), CONFIG.cors.ttl.clone());
+		res.headers.set("Access-Control-Allow-Methods".to_string(), CONFIG.http.cors.methods.clone());
+		res.headers.set("Access-Control-Allow-Headers".to_string(), CONFIG.http.cors.headers.clone());
+		res.headers.set("Access-Control-Max-Age".to_string(), CONFIG.http.cors.ttl.clone());
 		self.apply_origin_check(res);
 	}
 }
 
 /// Returns the allowed origin and whether it depends on the request.
-/// `cors.origin` from the config has priority, without it any origin is allowed.
+/// `http.cors.origin` from the config has priority, without it any origin is allowed.
 fn resolve_origin (configured: &str, requested: Option<&str>) -> (String, bool) {
 	if !configured.is_empty() {
 		return (configured.to_owned(), false);
