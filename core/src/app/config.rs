@@ -1,4 +1,4 @@
-use crate::http::proxy::IpNet;
+use crate::http::{cors::normalize_origin, proxy::IpNet};
 use crate::utils::{
     bake_fatal, json_read_array,
     log::{log_error, log_error_lines},
@@ -178,7 +178,8 @@ impl HttpConfig {
 }
 
 pub struct CorsConfig {
-    pub origin: String,
+    pub any_origin: bool,
+    pub origins: Vec<String>,
     pub methods: String,
     pub headers: String,
     pub ttl: String,
@@ -187,7 +188,8 @@ pub struct CorsConfig {
 impl CorsConfig {
     pub const fn default() -> Self {
         CorsConfig {
-            origin: String::new(),
+            any_origin: false,
+            origins: Vec::new(),
             methods: String::new(),
             headers: String::new(),
             ttl: String::new(),
@@ -195,9 +197,7 @@ impl CorsConfig {
     }
 
     fn load(&mut self, cors: &JsonValue) {
-        if let Some(origin) = cors["origin"].as_str() {
-            self.origin = origin.to_owned();
-        }
+        self.read_origins(&cors["origins"]);
 
         let methods = json_read_array(
             &cors["methods"],
@@ -227,6 +227,31 @@ impl CorsConfig {
             self.ttl = ttl.to_string();
         } else {
             self.ttl = "86400".to_owned();
+        }
+    }
+}
+
+impl CorsConfig {
+    fn read_origins(&mut self, value: &JsonValue) {
+        let fail = |got: String| -> ! {
+            log_error(&format!("Config parsing error: `http.cors.origins` must be an array of `\"*\"` or origins like `https://example.com`, got `{got}`"));
+            process::exit(-1);
+        };
+
+        let list = match value {
+            JsonValue::Null => return,
+            JsonValue::Array(list) => list,
+            other => fail(other.dump()),
+        };
+
+        for item in list {
+            match item.as_str() {
+                Some("*") => self.any_origin = true,
+                Some(text) => self
+                    .origins
+                    .push(normalize_origin(text).unwrap_or_else(|| fail(item.dump()))),
+                None => fail(item.dump()),
+            }
         }
     }
 }

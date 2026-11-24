@@ -4,42 +4,45 @@ use std::thread;
 use std::time::Duration;
 use threadpool::ThreadPool;
 
-use crate::app::config::CONFIG;
-use crate::http::cors::Cors;
-use crate::utils::log::*;
 use super::App;
+use crate::app::config::CONFIG;
 use crate::context::ws::SocketContext;
-use crate::http::{entity::*, codes::HttpCode};
-use crate::http1::{Http1Engine, Http1Connection};
-use crate::websocket::{websocket_handshake, HandshakeResult, maintain_websocket};
+use crate::http::cors::{is_request_allowed, Cors};
+use crate::http::{codes::HttpCode, entity::*};
+use crate::http1::{Http1Connection, Http1Engine};
+use crate::utils::log::*;
+use crate::websocket::{maintain_websocket, websocket_handshake, HandshakeResult};
 
-
-pub fn start_server (app: &'static App) {
+pub fn start_server(app: &'static App) {
     let bind_address = format!("{}:{}", CONFIG.http.host, CONFIG.http.port);
 
-	match TcpListener::bind(&bind_address) {
+    match TcpListener::bind(&bind_address) {
         Ok(listener) => {
             let pool = ThreadPool::new(32);
-			log_success(&format!("Listening on {}", bind_address));
+            log_success(&format!("Listening on {}", bind_address));
 
-			loop {
-				match listener.accept() {
-					Ok(socket) => pool.execute(move || proceed_connection::<Http1Engine, Http1Connection>(app, socket)),
-					Err(error) => {
-						log_warning(&format!("Failed to accept connection: {error}"));
-						thread::sleep(Duration::from_millis(100));
-					}
-				}
-			}
-		}
-		Err(error) => {
+            loop {
+                match listener.accept() {
+                    Ok(socket) => pool.execute(move || {
+                        proceed_connection::<Http1Engine, Http1Connection>(app, socket)
+                    }),
+                    Err(error) => {
+                        log_warning(&format!("Failed to accept connection: {error}"));
+                        thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            }
+        }
+        Err(error) => {
             log_error_lines("Listen error", error.to_string());
-		}
-	}
+        }
+    }
 }
 
-fn proceed_connection<Http: HttpEngine<Connection> + Send, Connection: HttpConnection>
-(app: &App, socket: (TcpStream, SocketAddr)) {
+fn proceed_connection<Http: HttpEngine<Connection> + Send, Connection: HttpConnection>(
+    app: &App,
+    socket: (TcpStream, SocketAddr),
+) {
     let mut connection = Http::handle_connection(socket);
 
     match connection.parse() {
@@ -65,13 +68,20 @@ fn proceed_connection<Http: HttpEngine<Connection> + Send, Connection: HttpConne
     }
 }
 
-fn proceed_http<Connection: HttpConnection> (app: &App, mut connection: Connection, req: Request) -> Result<(), Error> {
+fn proceed_http<Connection: HttpConnection>(
+    app: &App,
+    mut connection: Connection,
+    req: Request,
+) -> Result<(), Error> {
     let mut res;
     let cors = Cors::new(&req);
 
     if let HttpMethod::OPTIONS = req.method {
         res = Response::from_status(HttpCode::OK);
         cors.apply_preflight(&mut res);
+    } else if !is_request_allowed(&req, &CONFIG.http.cors) {
+        res = Response::from_code(HttpCode::Forbidden, "Cross-origin request is not allowed");
+        cors.apply_normal(&mut res);
     } else if let Some(response) = app.router.call_action(&mut connection, req, &cors) {
         res = response;
         cors.apply_normal(&mut res);
@@ -84,7 +94,11 @@ fn proceed_http<Connection: HttpConnection> (app: &App, mut connection: Connecti
     return connection.disconnect();
 }
 
-fn proceed_websocket<Connection: HttpConnection> (app: &App, mut connection: Connection, req: Request) {
+fn proceed_websocket<Connection: HttpConnection>(
+    app: &App,
+    mut connection: Connection,
+    req: Request,
+) {
     match websocket_handshake(app, &req) {
         HandshakeResult::Ok(endpoint_index, res) => {
             // todo: handle all `let _ = ...`
@@ -99,10 +113,10 @@ fn proceed_websocket<Connection: HttpConnection> (app: &App, mut connection: Con
     }
 }
 
-fn is_connection_upgrade (req: &Request) -> bool {
+fn is_connection_upgrade(req: &Request) -> bool {
     matches!(req.headers.get("connection"), Some(value) if value == "Upgrade")
 }
 
-fn is_websocket_upgrade (req: &Request) -> bool {
+fn is_websocket_upgrade(req: &Request) -> bool {
     matches!(req.headers.get("upgrade"), Some(value) if value == "websocket")
 }
